@@ -1,5 +1,7 @@
 # PEARL — NIGHT OVER THE HUANGPU
 
+English | [中文](README.zh-CN.md)
+
 > **在线体验：[https://zsj23333.github.io/dfmz/](https://zsj23333.github.io/dfmz/)**
 
 A single-page, cinematic WebGL night crossing of the Huangpu toward the Oriental Pearl. A procedural Three.js scroll experience modeled on [kage](https://github.com/MengTo/kage): no external images or video — the tower, river, skyline, Bund, halos, and wordmark are all generated in code.
