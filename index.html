@@ -1,0 +1,2205 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PEARL —Where the river meets the night</title>
+<meta name="description" content="A five-chapter night crossing over the Huangpu toward the Oriental Pearl. Three spheres of light above the water, a city burning behind them, rendered live in WebGL.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2304070d'/%3E%3Ccircle cx='16' cy='19' r='8' fill='%23ff3d7f'/%3E%3Ccircle cx='16' cy='8' r='2.6' fill='%23ff8fb8'/%3E%3Crect x='15.4' y='8' width='1.2' height='5' fill='%23dfe8ee'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="runtime/fonts.css">
+<style>
+/* ============================================================= tokens */
+:root{
+  --ink:#04070d;          /* night over the river */
+  --ink-2:#070d16;        /* raised black-blue */
+  --bone:#dce5ea;         /* pale steel white */
+  --bone-dim:#a3b0bb;
+  --muted:#71808d;
+  --line:rgba(220,229,234,.13);
+  --line-soft:rgba(220,229,234,.07);
+  --rose:#ff3d7f;         /* the pearl sphere */
+  --ember:#ff9a4d;        /* warm city light */
+  --cyan:#67c6dd;         /* cool glass & water */
+  --gold:#e8b45c;
+  --pad:clamp(20px, 3.4vw, 56px);
+  --nav-h:84px;
+  --ease:cubic-bezier(.22,.61,.36,1);
+  --ease-out:cubic-bezier(.16,1,.3,1);
+  --ease-io:cubic-bezier(.65,0,.35,1);
+}
+*,*::before,*::after{box-sizing:border-box}
+html{ -webkit-text-size-adjust:100%; scroll-behavior:auto; }
+body{
+  margin:0; background:var(--ink); color:var(--bone);
+  font-family:'Onest','PingFang SC','Microsoft YaHei','Noto Sans CJK SC',system-ui,-apple-system,'Helvetica Neue',sans-serif;
+  font-weight:300; font-size:16px; line-height:1.6;
+  -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+  overflow-x:hidden;
+}
+body.is-locked{ overflow:hidden; height:100vh; }
+::selection{ background:var(--rose); color:#fff; }
+img{max-width:100%;display:block}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+
+/* ============================================================= layers */
+#gl{
+  position:fixed; inset:0; width:100%; height:100%;
+  display:block; z-index:0; background:#04070d;
+}
+#grain{
+  position:fixed; inset:-1px; z-index:60; pointer-events:none;
+  opacity:.055; mix-blend-mode:overlay;
+  background-repeat:repeat; background-size:180px 180px;
+}
+#vignette{
+  position:fixed; inset:0; z-index:55; pointer-events:none;
+  background:radial-gradient(125% 95% at 50% 42%, transparent 40%, rgba(1,3,6,.55) 100%);
+}
+.page{ position:relative; z-index:10; }
+
+/* ============================================================= type */
+.eyebrow{
+  font-size:10px; font-weight:500; letter-spacing:.22em; text-transform:uppercase;
+  color:var(--bone-dim); text-shadow:0 1px 16px rgba(2,4,8,.9);
+}
+.cn{ font-family:'NotoJP','PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif; font-weight:400; }
+h1,h2,h3{ font-weight:400; margin:0; letter-spacing:-.005em; }
+.display{
+  text-transform:uppercase; line-height:1.055; letter-spacing:-.012em;
+  font-weight:400; text-shadow:0 2px 34px rgba(2,4,8,.72);
+}
+.h-hero{ font-size:clamp(26px,3.05vw,46px); }
+.h-sec{ font-size:clamp(30px,4.0vw,60px); }
+.body-lg{ font-size:clamp(14px,1.02vw,17px); line-height:1.72; color:#b6c2cc; font-weight:300; text-shadow:0 1px 20px rgba(2,4,8,.88); }
+.body{ font-size:14px; line-height:1.68; color:#98a6b1; font-weight:300; text-shadow:0 1px 18px rgba(2,4,8,.85); }
+.num{ font-size:clamp(26px,2.5vw,36px); font-weight:300; letter-spacing:-.02em; color:var(--bone); font-variant-numeric:tabular-nums; }
+
+/* ============================================================= reveal */
+[data-rv]{ opacity:0; }
+[data-rv="up"]{ transform:translate3d(0,26px,0); }
+[data-rv="fade"]{ transform:none; }
+[data-rv].rv-in{ opacity:1; transform:none;
+  transition:opacity .9s var(--ease-out), transform 1.05s var(--ease-out); }
+.mask-line{ display:block; overflow:hidden; }
+.mask-line:not(.word-reveal) > span{ display:block; transform:translate3d(0,110%,0); }
+.rv-in .mask-line:not(.word-reveal) > span, .mask-line:not(.word-reveal).rv-in > span{ transform:none; }
+.mask-line:not(.word-reveal) > span{ transition:transform 1.05s var(--ease-out); }
+.word-mask{ display:inline-block; overflow:hidden; vertical-align:top; }
+.word{
+  display:inline-block; opacity:0; transform:translate3d(0,112%,0); will-change:transform,opacity;
+  transition:transform .82s var(--ease-out), opacity .5s var(--ease-out);
+  transition-delay:var(--word-delay,0ms);
+}
+.word-reveal.rv-in .word{ opacity:1; transform:none; }
+
+/* ============================================================= preloader */
+#pre{
+  position:fixed; inset:0; z-index:100; background:#04070d;
+  display:flex; align-items:center; justify-content:center;
+  transition:opacity .8s var(--ease), visibility .8s;
+}
+#pre.done{ opacity:0; visibility:hidden; pointer-events:none; }
+.pre-in{ width:min(420px,74vw); text-align:center; }
+.pre-mark{ margin:0 auto 26px; width:44px; height:44px; opacity:.9; }
+.pre-mark svg{ width:100%; height:100%; display:block; }
+.pre-jp{ font-size:12px; letter-spacing:.5em; color:var(--bone-dim); margin-bottom:20px; }
+.pre-bar{ position:relative; height:1px; background:rgba(220,229,234,.14); overflow:hidden; }
+.pre-bar i{ position:absolute; inset:0 100% 0 0; background:var(--bone); transition:right .35s linear; }
+.pre-meta{ display:flex; justify-content:space-between; margin-top:12px;
+  font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:var(--muted); }
+.pre-meta b{ font-weight:500; color:var(--bone-dim); font-variant-numeric:tabular-nums; }
+
+/* ============================================================= nav */
+.nav{
+  position:fixed; top:0; left:0; width:var(--vw, 100%); height:var(--nav-h); z-index:50;
+  display:flex; align-items:center; gap:24px; padding:0 var(--pad);
+  transition:transform .55s var(--ease);
+}
+.nav::before{
+  content:''; position:absolute; inset:0; z-index:-1; pointer-events:none;
+  background:rgba(4,7,13,.62);
+  backdrop-filter:blur(14px) saturate(1.1); -webkit-backdrop-filter:blur(14px) saturate(1.1);
+  opacity:0; transition:opacity .5s linear;
+}
+.nav.stuck::before{ opacity:1; }
+.nav::after{
+  content:''; position:absolute; left:var(--pad); right:var(--pad); bottom:0; height:1px;
+  background:var(--line-soft); opacity:0; transition:opacity .5s;
+}
+.nav.stuck::after{ opacity:1; }
+.nav.hide{ transform:translate3d(0,-101%,0); }
+.brand{ display:flex; align-items:center; gap:11px; flex:0 0 auto; }
+.brand svg{ width:34px; height:34px; display:block; }
+.brand-tx{ display:flex; flex-direction:column; line-height:1; gap:3px; }
+.brand-tx b{ font-size:12px; font-weight:500; letter-spacing:.26em; }
+.brand-tx i{ font-style:normal; font-size:8px; letter-spacing:.34em; color:var(--muted); }
+.nav-links{ display:flex; gap:clamp(18px,2.6vw,46px); margin-left:auto; }
+.nav-link{
+  position:relative; font-size:11px; font-weight:500; letter-spacing:.2em; text-transform:uppercase;
+  color:var(--bone-dim); display:block; height:15px; line-height:15px; overflow:hidden;
+}
+.nav-link span{ display:block; height:15px; line-height:15px; transition:transform .55s var(--ease-out), color .3s; }
+.nav-link .alt{ position:absolute; inset:0; transform:translate3d(0,100%,0); color:var(--bone); letter-spacing:.32em; }
+.nav-link:hover span{ transform:translate3d(0,-100%,0); }
+.nav-link:hover .alt{ transform:none; }
+.nav-link.on{ color:var(--bone); }
+.nav-link.on::after{ content:''; position:absolute; left:0; bottom:0; width:100%; height:1px; background:var(--rose); }
+.nav-burger{ margin-left:clamp(18px,2.6vw,42px); width:26px; height:16px; position:relative; flex:0 0 auto; }
+.nav-burger i{ position:absolute; right:0; height:1.5px; background:var(--bone); transition:width .45s var(--ease-out), transform .45s var(--ease-out); }
+.nav-burger i:nth-child(1){ top:4px; width:26px; }
+.nav-burger i:nth-child(2){ top:11px; width:17px; }
+.nav-burger:hover i:nth-child(2){ width:26px; }
+.nav-burger:hover i:nth-child(1){ width:17px; }
+
+/* ============================================================= hero */
+.hero{ position:relative; min-height:100svh; padding:0 var(--pad); display:flex; flex-direction:column; }
+.hero::before{ content:''; position:absolute; left:0; right:0; top:0; height:46%; pointer-events:none;
+  background:linear-gradient(rgba(2,4,9,.72), rgba(2,4,9,.34) 46%, transparent); }
+.hero-top{ padding-top:calc(var(--nav-h) + clamp(12px,2.6vh,34px)); max-width:min(560px,46vw); position:relative; z-index:2; }
+.hero-top .eyebrow{ display:flex; align-items:center; gap:10px; margin-bottom:20px; }
+.hero-top .eyebrow .dot{ width:5px; height:5px; border-radius:50%; background:var(--rose); box-shadow:0 0 10px var(--rose); }
+.hero h1{ margin-bottom:18px; }
+.hero-sub{ max-width:322px; text-shadow:0 1px 26px rgba(2,4,8,.95); }
+.hero-spacer{ flex:1 1 auto; min-height:clamp(140px,26vh,300px); }
+.hero-foot{ padding-bottom:clamp(22px,4.2vh,42px); position:relative; z-index:2; }
+.hero-cue{ display:flex; align-items:center; justify-content:flex-end; gap:12px; margin-bottom:14px;
+  font-size:9px; letter-spacing:.3em; text-transform:uppercase; color:var(--muted); }
+.hero-cue .track{ width:54px; height:1px; background:var(--line); position:relative; overflow:hidden; }
+.hero-cue .track i{ position:absolute; inset:0; background:var(--bone); transform-origin:left;
+  animation:cue 2.8s var(--ease-io) infinite; }
+.chapters{
+  display:grid; grid-template-columns:repeat(4,1fr); gap:clamp(14px,2.4vw,40px);
+  border-top:1px solid var(--line-soft); padding-top:18px;
+}
+.chip{ display:flex; gap:14px; align-items:flex-start; cursor:pointer; }
+.chip .num{ line-height:1; flex:0 0 auto; transition:color .4s, transform .5s var(--ease-out); }
+.chip .tx{ min-width:0; padding-top:3px; }
+.chip b{ display:block; font-size:10px; font-weight:500; letter-spacing:.2em; text-transform:uppercase;
+  color:var(--bone-dim); margin-bottom:6px; transition:color .4s;
+  text-shadow:0 1px 16px rgba(2,4,8,.9); }
+.chip p{ margin:0; font-size:11px; line-height:1.5; color:#7d8a96; max-width:22ch;
+  transition:color .4s; }
+.chip:hover .num{ color:var(--ember); transform:translate3d(0,-2px,0); }
+.chip:hover b{ color:var(--bone); }
+.chip:hover p{ color:var(--bone-dim); }
+.chip.on .num{ color:var(--ember); }
+.chip.on b{ color:var(--bone); }
+/* the floating window: a live Pearl view carried over the hero */
+.peek{
+  position:absolute; z-index:2; right:clamp(78px,11vw,190px); top:clamp(132px,25vh,238px);
+  width:clamp(150px,16vw,262px); display:block;
+  transition:transform .8s var(--ease-out);
+}
+.peek-fr{ display:block; aspect-ratio:16/10;
+  background:
+    linear-gradient(180deg, rgba(2,4,9,.03) 24%, rgba(2,4,9,.42) 100%),
+    radial-gradient(120% 140% at 72% 30%, rgba(255,80,140,.20), rgba(2,4,9,0) 60%);
+  outline:1px solid rgba(220,229,234,.16); outline-offset:-1px;
+  box-shadow:0 34px 70px -30px rgba(0,0,0,.9); transition:outline-color .5s; }
+.peek:hover{ transform:translate3d(0,-5px,0); }
+.peek:hover .peek-fr{ outline-color:rgba(220,229,234,.42); }
+.peek-play{ position:absolute; top:0; right:0; left:0; bottom:auto; aspect-ratio:16/10;
+  display:grid; place-items:center; pointer-events:none; }
+.peek-play svg{ width:clamp(30px,3.2vw,46px); height:auto; filter:drop-shadow(0 2px 12px rgba(0,0,0,.7));
+  transition:transform .55s var(--ease-out); }
+.peek:hover .peek-play svg{ transform:scale(1.14); }
+.peek-cap{ display:flex; align-items:baseline; gap:9px; margin-top:9px; }
+.peek-cap b{ font-size:11px; font-weight:400; letter-spacing:.24em; color:var(--bone-dim); }
+.peek-cap i{ font-style:normal; font-size:9px; letter-spacing:.2em; text-transform:uppercase; color:var(--muted); }
+@media (max-width:820px){ .peek{ display:none; } }
+
+.hero-side{
+  position:absolute; z-index:2; right:var(--pad); top:50%; transform:translateY(-50%);
+  display:flex; flex-direction:column; align-items:center; gap:14px; pointer-events:none;
+}
+.hero-side .v{ writing-mode:vertical-rl; font-size:13px; letter-spacing:.62em; color:rgba(220,229,234,.5); }
+@keyframes cue{ 0%{transform:scaleX(0)} 42%{transform:scaleX(1)} 100%{transform:scaleX(1) translateX(100%)} }
+
+/* ============================================================= sections */
+.sec{ position:relative; padding:clamp(88px,15vh,190px) var(--pad); }
+.sec::before{
+  content:''; position:absolute; inset:-22% -4%; z-index:-1; pointer-events:none;
+  background:radial-gradient(110% 62% at 30% 50%, rgba(3,6,10,.88), rgba(3,6,10,.62) 42%, rgba(3,6,10,.18) 74%, rgba(3,6,10,0));
+  -webkit-mask-image:linear-gradient(transparent, #000 44%);
+          mask-image:linear-gradient(transparent, #000 44%);
+}
+#skyline::before{ background:radial-gradient(108% 64% at 50% 50%, rgba(3,6,10,.70), rgba(3,6,10,.44) 50%, rgba(3,6,10,0)); }
+#afterglow::before{ background:radial-gradient(82% 58% at 50% 46%, rgba(3,6,10,.26), rgba(3,6,10,.66) 56%, rgba(3,6,10,.90) 82%, rgba(3,6,10,0)); }
+.foot::before{
+  content:''; position:absolute; inset:0; z-index:-1; pointer-events:none;
+  background:linear-gradient(rgba(3,6,10,.55), rgba(3,6,10,.94) 40%, rgba(3,6,10,.98));
+}
+.sec-head{ display:flex; align-items:baseline; gap:16px; margin-bottom:clamp(30px,5vh,66px); }
+.sec-head .k{ font-size:10px; font-weight:500; letter-spacing:.24em; text-transform:uppercase; color:var(--muted); }
+.sec-head .k b{ color:var(--rose); font-weight:500; }
+.rule{ flex:1 1 auto; height:1px; background:var(--line-soft); }
+
+/* —chapter I: the pearl */
+.gate-grid{ display:grid; grid-template-columns:minmax(0,1.02fr) minmax(0,1fr); gap:clamp(28px,5vw,90px); align-items:start; }
+.gate-grid h2{ max-width:11ch; }
+.gate-copy{ padding-top:6px; }
+.gate-copy .lead{ font-size:clamp(15px,1.16vw,19px); line-height:1.66; color:#c4d0da; text-shadow:0 1px 20px rgba(2,4,8,.9); }
+.gate-copy .lead + p{ margin-top:20px; }
+.arrowlink{ display:inline-flex; align-items:center; gap:12px; margin-top:34px;
+  font-size:11px; font-weight:500; letter-spacing:.2em; text-transform:uppercase; color:var(--bone); }
+.arrowlink .ar{ width:34px; height:34px; border:1px solid var(--line); border-radius:50%;
+  display:grid; place-items:center; transition:background .45s var(--ease), border-color .45s, transform .5s var(--ease-out); }
+.arrowlink .ar svg{ width:13px; height:13px; transition:transform .5s var(--ease-out); }
+.arrowlink:hover .ar{ background:var(--bone); border-color:var(--bone); }
+.arrowlink:hover .ar svg{ transform:translate3d(2px,-2px,0); }
+.arrowlink:hover .ar svg path{ stroke:#04070d; }
+.gate-stats{ display:flex; gap:clamp(24px,4vw,62px); margin-top:clamp(46px,8vh,96px); border-top:1px solid var(--line-soft); padding-top:24px; }
+.gate-stats div b{ display:block; font-size:clamp(22px,2.1vw,32px); font-weight:300; letter-spacing:-.02em; }
+.gate-stats div span{ font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:var(--muted); }
+
+/* —chapter II: skyline cards */
+.cards{ display:grid; grid-template-columns:repeat(3,1fr); gap:clamp(10px,1.4vw,22px); align-items:start; }
+.card{ position:relative; cursor:pointer; }
+.card:nth-child(1){ transform:translateY(0); }
+.card:nth-child(2){ transform:translateY(clamp(26px,5vw,74px)); }
+.card:nth-child(3){ transform:translateY(clamp(52px,10vw,148px)); }
+.card-fr{
+  position:relative; aspect-ratio:4/5; background:transparent;
+  outline:1px solid var(--line-soft); outline-offset:-1px;
+  transition:outline-color .5s var(--ease);
+}
+.card:hover .card-fr{ outline-color:rgba(220,229,234,.30); }
+.card:nth-child(1) .card-fr{
+  background:
+    linear-gradient(180deg,rgba(2,4,9,.03) 36%,rgba(2,4,9,.52) 100%),
+    radial-gradient(120% 90% at 62% 12%, rgba(255,190,110,.14), rgba(2,4,9,0) 55%);
+}
+.card:nth-child(2) .card-fr{
+  background:
+    linear-gradient(180deg,rgba(2,4,9,.04) 36%,rgba(2,4,9,.54) 100%),
+    radial-gradient(120% 90% at 55% 40%, rgba(110,210,235,.13), rgba(2,4,9,0) 55%);
+}
+.card:nth-child(3) .card-fr{
+  background:
+    linear-gradient(180deg,rgba(2,4,9,.03) 36%,rgba(2,4,9,.54) 100%),
+    radial-gradient(120% 90% at 50% 22%, rgba(255,90,160,.14), rgba(2,4,9,0) 55%);
+}
+.card-fr::after{ content:''; position:absolute; inset:0;
+  background:linear-gradient(transparent 46%, rgba(3,5,9,.80)); pointer-events:none; }
+.card-fr{ isolation:isolate; }
+.glow{
+  position:absolute; z-index:1; pointer-events:none;
+  left:var(--gx); top:var(--gy); width:calc(var(--gr) * 2); aspect-ratio:1;
+  translate:-50% -50%;
+  mix-blend-mode:screen;
+  animation:glow-swell var(--gt2) var(--ease-io) infinite alternate;
+}
+.glow::before{
+  content:''; position:absolute; inset:0; border-radius:50%;
+  background:radial-gradient(closest-side, var(--gc1), var(--gc2) 40%, transparent 72%);
+  animation:glow-pulse var(--gt) var(--ease-io) infinite;
+}
+@keyframes glow-swell{ from{ transform:scale(.93); } to{ transform:scale(1.07); } }
+@keyframes glow-pulse{ from{ opacity:.78; } 50%{ opacity:1; } to{ opacity:.78; } }
+@keyframes glow-flame{
+  0%{ opacity:.74 }   6%{ opacity:.97 }  12%{ opacity:.63 }  19%{ opacity:.90 }
+  27%{ opacity:.55 }  34%{ opacity:.94 } 42%{ opacity:.71 }  51%{ opacity:1 }
+  58%{ opacity:.60 }  66%{ opacity:.88 } 74%{ opacity:.67 }  83%{ opacity:.96 }
+  91%{ opacity:.72 } 100%{ opacity:.74 }
+}
+.glow--flame::before{ animation-name:glow-flame; }
+.glow--flame{ animation-duration:var(--gt2); }
+@media (prefers-reduced-motion:reduce){
+  .glow, .glow::before{ animation:none; }
+}
+.no-webgl .card-fr{ background:linear-gradient(150deg,#101c24,#0a0d12 62%,#1a0b12); }
+.word-fb{ display:none; }
+.no-webgl #gl, .no-webgl .peek-play{ display:none; }
+.no-webgl body{ background:
+  radial-gradient(11vw 11vw at 73% 17%, rgba(255,61,127,.95), rgba(158,20,80,.62) 44%, rgba(96,12,48,.20) 64%, transparent 72%),
+  radial-gradient(38vw 32vw at 50% 46%, rgba(255,154,77,.40), rgba(122,52,20,.18) 54%, transparent 74%),
+  radial-gradient(120% 80% at 50% 0%, rgba(103,198,221,.16), transparent 60%), #04070d;
+  background-attachment:fixed; }
+.no-webgl .peek-fr{ background:linear-gradient(160deg,#14222e,#0b1016 55%,#241018); }
+.no-webgl .word-fb{
+  display:block; position:absolute; left:0; right:0; bottom:16%; z-index:1;
+  font-family:'Wordmark','Onest',sans-serif; font-weight:600; font-size:21.4vw; line-height:.78;
+  letter-spacing:.052em; text-align:center; pointer-events:none;
+  background:linear-gradient(#e4eef4, #8fa7b4); -webkit-background-clip:text; background-clip:text;
+  color:transparent;
+}
+.no-webgl .hero::after{ content:''; position:absolute; left:0; right:0; bottom:0; height:34%;
+  pointer-events:none; background:linear-gradient(transparent, rgba(2,4,8,.72) 52%, rgba(2,4,8,.96)); }
+.no-webgl .sec::before, .no-webgl #skyline::before, .no-webgl #afterglow::before{ background:none; }
+.card-lab{ position:absolute; left:16px; right:16px; bottom:14px; z-index:2;
+  display:flex; align-items:flex-end; justify-content:space-between; gap:10px; }
+.card-lab b{ font-size:clamp(13px,1.15vw,17px); font-weight:400; letter-spacing:.02em; text-transform:uppercase; }
+.card-lab .jp{ font-size:11px; letter-spacing:.3em; color:rgba(220,229,234,.62); }
+.card-ar{ position:absolute; top:14px; right:14px; z-index:2; width:26px; height:26px;
+  opacity:0; transform:translate3d(-4px,4px,0); transition:.5s var(--ease-out); }
+.card:hover .card-ar{ opacity:1; transform:none; }
+.card-meta{ display:flex; justify-content:space-between; margin-top:12px;
+  font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); }
+
+/* —chapter III: bund atlas */
+.cur-head{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,.72fr); gap:clamp(28px,5vw,90px); align-items:end; margin-bottom:clamp(34px,6vh,72px); }
+.cur-head h2{ max-width:13ch; }
+.cur{ border-top:1px solid var(--line-soft); }
+.les{
+  position:relative; display:grid; align-items:center;
+  grid-template-columns:64px minmax(0,1.05fr) minmax(0,1.25fr) 86px;
+  gap:clamp(14px,2.4vw,40px);
+  padding:clamp(20px,2.4vw,30px) 0; border-bottom:1px solid var(--line-soft);
+  cursor:pointer; transition:padding .5s var(--ease-out);
+}
+.les::before{ content:''; position:absolute; left:calc(var(--pad) * -1); right:0; top:0; bottom:0;
+  background:linear-gradient(90deg, rgba(255,61,127,.09), transparent 46%);
+  opacity:0; transition:opacity .55s var(--ease); pointer-events:none; }
+.les:hover::before{ opacity:1; }
+.les:hover{ padding-left:clamp(8px,1.2vw,18px); }
+.les .k{ font-size:11px; letter-spacing:.16em; color:var(--muted); font-variant-numeric:tabular-nums; transition:color .4s; }
+.les:hover .k{ color:var(--rose); }
+.les h3{ font-size:clamp(16px,1.5vw,23px); font-weight:400; letter-spacing:-.005em; }
+.les h3 em{ font-style:normal; font-family:'NotoJP','PingFang SC','Microsoft YaHei',sans-serif; font-size:.72em; color:var(--muted); margin-left:12px; letter-spacing:.24em; }
+.les p{ margin:0; font-size:13px; line-height:1.6; color:#909da8; text-shadow:0 1px 16px rgba(2,4,8,.92); }
+.les .t{ text-align:right; font-size:11px; letter-spacing:.14em; color:#8b98a3; font-variant-numeric:tabular-nums; text-shadow:0 1px 16px rgba(2,4,8,.92); }
+.les .bar{ position:absolute; left:0; bottom:-1px; height:1px; width:100%; background:var(--rose);
+  transform:scaleX(0); transform-origin:left; transition:transform .7s var(--ease-out); }
+.les:hover .bar{ transform:scaleX(1); }
+
+/* —chapter IV: afterglow */
+.fin{ min-height:100svh; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; }
+.fin .eyebrow{ margin-bottom:26px; }
+.fin h2{ font-size:clamp(38px,7.4vw,124px); line-height:.94; letter-spacing:-.03em; text-transform:uppercase; }
+.fin p{ max-width:44ch; margin:26px auto 0; }
+.cta{
+  position:relative; display:inline-flex; align-items:center; gap:14px; margin-top:44px;
+  padding:17px 30px; border:1px solid var(--line); border-radius:100px; overflow:hidden;
+  font-size:11px; font-weight:500; letter-spacing:.22em; text-transform:uppercase;
+  transition:color .45s var(--ease), border-color .45s;
+}
+.cta i{ position:absolute; inset:0; background:var(--bone); transform:translate3d(0,101%,0);
+  transition:transform .62s var(--ease-out); z-index:-1; }
+.cta span,.cta svg{ position:relative; z-index:1; }
+.cta:hover{ color:#04070d; border-color:var(--bone); }
+.cta:hover i{ transform:none; }
+.cta:hover svg path{ stroke:#04070d; }
+
+/* —footer */
+.foot{ position:relative; padding:clamp(50px,8vh,96px) var(--pad) clamp(26px,4vh,40px);
+  border-top:1px solid var(--line-soft); }
+.foot-grid,.foot-base{ position:relative; }
+.foot-grid{ display:grid; grid-template-columns:minmax(0,1.4fr) repeat(3,minmax(0,.6fr)); gap:clamp(22px,4vw,60px); }
+.foot h4{ margin:0 0 16px; font-size:10px; font-weight:500; letter-spacing:.22em; text-transform:uppercase; color:var(--muted); }
+.foot ul{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:9px; }
+.foot li a{ font-size:13px; color:#8f9ca6; transition:color .35s; }
+.foot li a:hover{ color:var(--bone); }
+.foot-brand p{ margin:16px 0 0; max-width:34ch; font-size:13px; color:#798693; }
+.foot-base{ display:flex; justify-content:space-between; align-items:center; gap:20px; flex-wrap:wrap;
+  margin-top:clamp(38px,6vh,74px); padding-top:20px; border-top:1px solid var(--line-soft);
+  font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); }
+
+/* ============================================================= progress rail */
+.rail{ position:fixed; right:calc(var(--pad) - 4px); top:50%; transform:translateY(-50%); z-index:45;
+  display:flex; flex-direction:column; gap:12px; align-items:center; }
+.rail button{ width:22px; height:10px; display:grid; place-items:center; }
+.rail i{ display:block; width:14px; height:1px; background:rgba(220,229,234,.26); transition:.5s var(--ease-out); }
+.rail button.on i{ width:22px; background:var(--bone); }
+.rail button:hover i{ width:22px; background:var(--bone-dim); }
+
+/* ============================================================= cursor */
+.cur-dot{ position:fixed; z-index:80; top:0; left:0; width:26px; height:26px; margin:-13px 0 0 -13px;
+  border:1px solid rgba(220,229,234,.42); border-radius:50%; pointer-events:none;
+  transition:width .35s var(--ease-out), height .35s var(--ease-out), margin .35s var(--ease-out),
+             background .35s, border-color .35s, opacity .3s; opacity:0; }
+.cur-dot.act{ width:52px; height:52px; margin:-26px 0 0 -26px; background:rgba(220,229,234,.07); border-color:rgba(220,229,234,.6); }
+@media (hover:hover) and (pointer:fine){ .cur-dot{ opacity:1 } }
+
+/* ============================================================= responsive */
+@media (max-width:1080px){
+  .hero-top{ max-width:none; }
+  .gate-grid{ grid-template-columns:1fr; gap:26px; }
+  .cur-head{ grid-template-columns:1fr; gap:18px; }
+  .les{ grid-template-columns:44px minmax(0,1fr) 74px; }
+  .les p{ display:none; }
+  .foot-grid{ grid-template-columns:1fr 1fr; }
+}
+@media (max-width:820px){
+  .nav-links{
+    display:flex; position:fixed; top:0; right:0; bottom:0; width:min(84vw,360px);
+    padding:calc(var(--nav-h) + 28px) var(--pad) 34px; flex-direction:column; align-items:flex-start; gap:0;
+    background:rgba(3,6,10,.98); border-left:1px solid var(--line-soft);
+    transform:translate3d(100%,0,0); opacity:0; visibility:hidden; pointer-events:none;
+    transition:transform .65s var(--ease-out), opacity .4s, visibility 0s linear .65s;
+  }
+  .nav.menu-open .nav-links{
+    transform:none; opacity:1; visibility:visible; pointer-events:auto; transition-delay:0s;
+  }
+  .nav-links .nav-link{
+    width:100%; height:auto; padding:17px 0; overflow:visible; border-bottom:1px solid var(--line-soft);
+    font-size:17px; line-height:1.2;
+  }
+  .nav-links .nav-link span{ height:auto; line-height:1.2; transform:none !important; }
+  .nav-links .nav-link .alt{ position:static; margin-top:6px; font-size:10px; color:var(--muted); }
+  .nav.menu-open{ transform:none; transition:none; }
+  .nav-burger{ margin-left:auto; }
+  .nav-burger.active i:nth-child(1){ top:7px; width:26px; transform:rotate(45deg); }
+  .nav-burger.active i:nth-child(2){ top:7px; width:26px; transform:rotate(-45deg); }
+  html.nav-open,html.nav-open body{ overflow:hidden; }
+  .rail{ display:none; }
+  .hero-side{ display:none; }
+  .chapters{ grid-template-columns:repeat(2,1fr); gap:18px 14px; }
+  .chip p{ font-size:10px; }
+  .cards{ grid-template-columns:1fr; gap:14px; }
+  .card:nth-child(2),.card:nth-child(3){ transform:none; }
+  .gate-stats{ flex-wrap:wrap; gap:20px 34px; }
+  .foot-grid{ grid-template-columns:1fr; }
+  .hero-cue{ display:none; }
+}
+/* ================================================== section layouts (B set) */
+body[data-layout-hero="b"] .hero-top{ margin-left:0; max-width:min(590px,46vw); }
+body[data-layout-hero="b"] .hero-foot{ width:min(480px,40vw); margin-left:0; }
+body[data-layout-hero="b"] .hero-cue{ justify-content:flex-start; }
+body[data-layout-hero="b"] .chapters{ grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+body[data-layout-hero="b"] .chip{ position:relative; flex-direction:column; gap:0; }
+body[data-layout-hero="b"] .chip .num{ font-size:clamp(29px,3.1vw,48px); }
+body[data-layout-hero="b"] .chip .tx{
+  position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0);
+  clip-path:inset(50%); white-space:nowrap;
+}
+body[data-layout-hero="b"] .peek{
+  left:auto; right:var(--pad); top:auto; bottom:clamp(38px,7vh,96px);
+}
+body[data-layout-hero="b"] .peek-cap b.cn{ font-size:clamp(20px,2.2vw,34px); letter-spacing:.18em; }
+body[data-layout-hero="b"] .hero-side{
+  left:auto; right:var(--pad); top:calc(var(--nav-h) + clamp(14px,3vh,42px));
+  bottom:auto; transform:none; display:block;
+}
+body[data-layout-hero="b"] .hero-side .v{
+  position:static; transform:none;
+  font-size:clamp(30px,3.2vw,54px); letter-spacing:.12em; color:rgba(220,229,234,.62);
+}
+
+body[data-layout-story="b"] .gate-grid{
+  grid-template-columns:minmax(120px,.38fr) minmax(0,1.08fr) minmax(280px,.88fr);
+  gap:clamp(20px,3vw,54px);
+}
+body[data-layout-story="b"] .gate-grid h2{ grid-column:1 / 3; max-width:13ch; }
+body[data-layout-story="b"] .gate-copy{ grid-column:3; }
+body[data-layout-story="b"] .gate-stats{ display:grid; grid-template-columns:repeat(4,1fr); gap:0; }
+body[data-layout-story="b"] .gate-stats div{ min-height:108px; padding:18px; border-left:1px solid var(--line-soft); }
+body[data-layout-story="b"] .gate-stats div:last-child{ border-right:1px solid var(--line-soft); }
+
+body[data-layout-gallery="b"] .cards{
+  grid-template-columns:minmax(0,1.55fr) minmax(260px,.75fr);
+  grid-template-rows:repeat(2,minmax(0,1fr));
+  gap:14px; align-items:stretch;
+}
+body[data-layout-gallery="b"] .card{ transform:none; display:flex; flex-direction:column; min-height:0; }
+body[data-layout-gallery="b"] .card-fr{ aspect-ratio:auto; flex:1 1 auto; min-height:0; }
+body[data-layout-gallery="b"] .card:first-child{ grid-row:1 / 3; }
+body[data-layout-gallery="b"] .card:first-child .card-fr{ flex:0 0 auto; height:min(72vh,760px); }
+body[data-layout-gallery="b"] .card:not(:first-child) .card-fr{ min-height:200px; }
+
+body[data-layout-curriculum="b"] .cur-head{ grid-template-columns:minmax(0,.72fr) minmax(0,1.2fr); align-items:start; }
+body[data-layout-curriculum="b"] .cur{
+  display:grid; grid-template-columns:repeat(6,1fr); gap:1px;
+  background:var(--line-soft); border:1px solid var(--line-soft);
+}
+body[data-layout-curriculum="b"] .les{
+  display:flex; flex-direction:column; align-items:flex-start; min-height:250px;
+  padding:24px; gap:14px; border:0; background:rgba(4,7,13,.84); overflow:hidden;
+}
+body[data-layout-curriculum="b"] .les:nth-child(-n+2){ grid-column:span 3; }
+body[data-layout-curriculum="b"] .les:nth-child(n+3){ grid-column:span 2; }
+body[data-layout-curriculum="b"] .les::before{ left:0; background:linear-gradient(145deg,rgba(255,61,127,.13),transparent 58%); }
+body[data-layout-curriculum="b"] .les:hover{ padding-left:32px; }
+body[data-layout-curriculum="b"] .les h3{ font-size:clamp(20px,2vw,30px); }
+body[data-layout-curriculum="b"] .les p{ display:block; max-width:34ch; }
+body[data-layout-curriculum="b"] .les .t{ text-align:left; margin-top:auto; }
+
+body[data-layout-closing="b"] .fin{
+  display:grid; grid-template-columns:minmax(260px,.7fr) minmax(0,1.3fr); grid-template-rows:auto auto auto;
+  align-content:center; align-items:end; text-align:left;
+  column-gap:clamp(40px,7vw,120px); row-gap:clamp(16px,2.6vh,30px);
+}
+body[data-layout-closing="b"] .fin .eyebrow{ grid-column:1; grid-row:1; margin:0; }
+body[data-layout-closing="b"] .fin h2{
+  grid-column:2; grid-row:1 / 4; align-self:center; justify-self:end;
+  font-size:clamp(52px,6vw,82px); writing-mode:vertical-rl;
+}
+body[data-layout-closing="b"] .fin p{ grid-column:1; grid-row:2; margin:0; }
+body[data-layout-closing="b"] .fin .cta{ grid-column:1; grid-row:3; justify-self:start; margin-top:4px; }
+
+body[data-layout-footer="b"] .foot-grid{ grid-template-columns:repeat(3,1fr); }
+body[data-layout-footer="b"] .foot-brand{
+  grid-column:1 / -1; display:grid; grid-template-columns:70px minmax(0,1fr); align-items:center;
+  padding-bottom:34px; margin-bottom:8px; border-bottom:1px solid var(--line-soft);
+}
+body[data-layout-footer="b"] .foot-brand svg{ width:54px; height:54px; }
+body[data-layout-footer="b"] .foot-brand p{
+  margin:0; max-width:48ch; font-size:clamp(18px,2vw,30px); line-height:1.35; color:var(--bone-dim);
+}
+body[data-layout-footer="b"] .foot-grid > div:nth-child(n+3){
+  padding-left:clamp(18px,2.2vw,34px); border-left:1px solid var(--line-soft);
+}
+body[data-layout-footer="b"] .foot-base{ display:grid; grid-template-columns:1fr auto 1fr; }
+body[data-layout-footer="b"] .foot-base span:last-child{ text-align:right; }
+
+/* ================================================= foreground layers (PEARL)
+   Procedural cut-outs are painted at boot to data URLs (riverbank reeds,
+   plane-tree boughs) and inserted as near-plane layers. Each section carries
+   one .fg box holding a few pieces that stand between the live river and the
+   reading. The active chapter owns a fixed, bottom-anchored near plane. */
+.fg{
+  position:absolute; inset:0; z-index:3;
+  overflow:visible; pointer-events:none;
+}
+.sec, .foot{ overflow-x:clip; overflow-y:visible; }
+#fg-sky{
+  position:fixed; left:0; top:0; width:0; height:0;
+  z-index:52; pointer-events:none;
+}
+.sec > *:not(.fg), .foot > *:not(.fg){ position:relative; z-index:2; }
+.fg-el{ position:absolute; display:block; opacity:0; }
+.fg-el > img{
+  width:100%; height:auto;
+  opacity:1;
+  filter:saturate(.88) brightness(.86);
+}
+.fg-el--flip > img{ transform:scaleX(-1); }
+[data-fg-in="up"]   { transform:translate3d(0,13%,0); }
+[data-fg-in="left"] { transform:translate3d(-11%,6%,0); }
+[data-fg-in="right"]{ transform:translate3d(11%,6%,0); }
+@keyframes fg-sway{
+  from{ transform:rotate(-.45deg) translate3d(0,2px,0); }
+  to  { transform:rotate(.45deg)  translate3d(0,-6px,0); }
+}
+.fg-el--sway > img{ animation:fg-sway 21s var(--ease-io) infinite alternate; transform-origin:0% 45%; }
+.fg.fg-active,.fg.fg-retiring{
+  position:fixed; left:0; right:0; top:auto; bottom:0; height:min(56svh,680px);
+  z-index:1; overflow:visible; pointer-events:none;
+}
+.fg.fg-active .fg-el{
+  opacity:1; transform:none;
+  transition:opacity 1.2s var(--ease-out), transform 1.5s var(--ease-out);
+  transition-delay:var(--fg-delay,0ms);
+}
+.fg .fg-el:nth-child(2){ --fg-delay:90ms; }
+.fg .fg-el:nth-child(3){ --fg-delay:180ms; }
+.fg .fg-el:nth-child(4){ --fg-delay:270ms; }
+.fg.fg-retiring .fg-el{
+  opacity:0; transform:translate3d(0,8vh,0) scale(.98); filter:blur(18px);
+  transition:opacity .68s var(--ease-out),transform .78s var(--ease-out),filter .78s var(--ease-out);
+}
+
+/* —I ·the pearl: reeds along the lower-left frame, a bough at the right edge */
+[data-fg="pearl"] .fg-bank  { left:-4%;  bottom:-60px; width:clamp(440px,52vw,900px); }
+[data-fg="pearl"] .fg-bough { right:-8%; bottom:-120px; width:clamp(260px,30vw,540px); }
+
+/* —II ·skyline: reeds sweep in from the left, a second bank on the right */
+[data-fg="skyline"] .fg-bank  { left:-6%;  bottom:-70px; width:clamp(460px,54vw,960px); }
+[data-fg="skyline"] .fg-bank2 { right:-7%; bottom:-80px; width:clamp(360px,42vw,760px); }
+
+/* —III ·bund: a bough from the left, reeds at the right */
+[data-fg="bund"] .fg-bough { left:-9%;  bottom:-90px; width:clamp(300px,36vw,620px); }
+[data-fg="bund"] .fg-bank  { right:-6%; bottom:-60px; width:clamp(420px,50vw,880px); }
+
+/* —IV ·afterglow: one bough hanging into the corner, reeds closing the foot */
+[data-fg="afterglow"] .fg-bough { left:-12%; bottom:-80px; width:clamp(300px,36vw,640px); }
+[data-fg="afterglow"] .fg-bank  { right:-8%; bottom:-70px; width:clamp(380px,46vw,820px); }
+
+/* —colophon: one restrained planting along the lower edge */
+[data-fg="foot"] .fg-bank  { left:-6%;  bottom:-90px; width:clamp(380px,46vw,820px); }
+[data-fg="foot"] .fg-bough { right:-9%; bottom:-120px; width:clamp(260px,30vw,540px); }
+
+@media (max-width:1080px){
+  [data-fg="pearl"] .fg-bank  { width:clamp(420px,48vw,720px); }
+  [data-fg="skyline"] .fg-bank{ width:clamp(420px,50vw,760px); }
+  [data-fg="bund"] .fg-bank   { width:clamp(400px,46vw,720px); }
+  [data-fg="afterglow"] .fg-bough{ width:clamp(260px,32vw,520px); }
+}
+@media (max-width:820px){
+  [data-fg="pearl"] .fg-bough, [data-fg="bund"] .fg-bough,
+  [data-fg="afterglow"] .fg-bough, [data-fg="foot"] .fg-bough{ display:none; }
+  [data-fg="pearl"] .fg-bank  { left:-12%; bottom:-34px; width:min(88vw,500px); }
+  [data-fg="skyline"] .fg-bank { left:-12%; bottom:-34px; width:min(86vw,480px); }
+  [data-fg="skyline"] .fg-bank2{ right:-14%; bottom:-44px; width:min(80vw,440px); }
+  [data-fg="bund"] .fg-bank   { right:-14%; bottom:-34px; width:min(86vw,480px); }
+  [data-fg="afterglow"] .fg-bank{ right:-14%; bottom:-34px; width:min(86vw,480px); }
+  [data-fg="foot"] .fg-bank   { left:-14%; bottom:-30px; width:min(88vw,500px); }
+}
+@media (prefers-reduced-motion:reduce){
+  .fg-el--sway > img{ animation:none; }
+  .fg.fg-retiring .fg-el{ transition:none !important; filter:none !important; }
+}
+
+@media (max-width:1080px){
+  body[data-layout-hero="b"] .chapters{ gap:16px 20px; }
+  body[data-layout-story="b"] .gate-grid{ grid-template-columns:1fr; }
+  body[data-layout-story="b"] .gate-grid h2,
+  body[data-layout-story="b"] .gate-copy{ grid-column:auto; }
+  body[data-layout-story="b"] .gate-grid h2{ max-width:16ch; }
+  body[data-layout-curriculum="b"] .les:nth-child(n){ grid-column:span 3; }
+  body[data-layout-curriculum="b"] .les:last-child{ grid-column:span 6; }
+}
+@media (max-width:820px){
+  body[data-layout-hero="b"] .hero-top{ margin-left:0; max-width:none; }
+  body[data-layout-hero="b"] .hero-foot{ width:100%; }
+  body[data-layout-hero="b"] .chapters{ grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px 14px; }
+  body[data-layout-hero="b"] .chip{ flex-direction:row; gap:14px; }
+  body[data-layout-curriculum="b"] .cur-head{ grid-template-columns:1fr; gap:18px; align-items:start; }
+  body[data-layout-hero="b"] .chip .num{ font-size:clamp(26px,8vw,36px); }
+  body[data-layout-hero="b"] .chip .tx{
+    position:static; width:auto; height:auto; overflow:visible; clip:auto;
+    clip-path:none; white-space:normal;
+  }
+  body[data-layout-story="b"] .gate-stats{ grid-template-columns:repeat(2,1fr); border-right:1px solid var(--line-soft); }
+  body[data-layout-story="b"] .gate-stats div{ min-height:86px; padding:14px; }
+  body[data-layout-story="b"] .gate-stats div:nth-child(-n+2){ border-bottom:1px solid var(--line-soft); }
+  body[data-layout-story="b"] .gate-stats div:last-child{ border-right:0; }
+  body[data-layout-gallery="b"] .cards{ grid-template-columns:1fr; grid-template-rows:auto; }
+  body[data-layout-gallery="b"] .card:first-child{ grid-row:auto; }
+  body[data-layout-gallery="b"] .card-fr{ flex:0 0 auto; height:auto; }
+  body[data-layout-gallery="b"] .card:first-child .card-fr{ height:auto; aspect-ratio:4 / 5; }
+  body[data-layout-gallery="b"] .card:not(:first-child) .card-fr{ aspect-ratio:16 / 10; min-height:0; }
+  body[data-layout-curriculum="b"] .cur{ grid-template-columns:1fr; }
+  body[data-layout-curriculum="b"] .les:nth-child(n){ grid-column:auto; min-height:0; padding:20px; }
+  body[data-layout-curriculum="b"] .les:hover{ padding-left:20px; }
+  body[data-layout-closing="b"] .fin{ display:flex; align-items:center; text-align:center; gap:0; }
+  body[data-layout-closing="b"] .fin .eyebrow{ margin:0 0 26px; }
+  body[data-layout-closing="b"] .fin h2{ writing-mode:horizontal-tb; font-size:clamp(38px,7.4vw,124px); }
+  body[data-layout-closing="b"] .fin p{ margin:26px auto 0; }
+  body[data-layout-closing="b"] .fin .cta{ margin-top:40px; }
+  body[data-layout-footer="b"] .foot-grid{ grid-template-columns:1fr; }
+  body[data-layout-footer="b"] .foot-brand{ grid-column:auto; grid-template-columns:minmax(0,1fr); row-gap:16px; }
+  body[data-layout-footer="b"] .foot-grid > div:nth-child(n+3){ padding-left:0; border-left:0; }
+  body[data-layout-footer="b"] .foot-base{ display:flex; }
+  body[data-layout-footer="b"] .foot-base span:last-child{ text-align:left; }
+}
+@media (max-width:560px){
+  body[data-layout-hero="b"] .chip{ flex-direction:column; gap:4px; }
+  body[data-layout-hero="b"] .chip .num{ font-size:clamp(22px,7.4vw,30px); }
+  body[data-layout-hero="b"] .chip .tx{ padding-top:0; }
+  body[data-layout-hero="b"] .chip p{ max-width:none; }
+}
+@media (prefers-reduced-motion:reduce){
+  *{ animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; }
+  [data-rv]{ opacity:1 !important; transform:none !important; }
+  .mask-line > span,.word{ opacity:1 !important; transform:none !important; }
+}
+</style>
+
+</head>
+<body data-layout-hero="b" data-layout-story="b" data-layout-gallery="b"
+      data-layout-curriculum="b" data-layout-closing="b" data-layout-footer="b">
+
+<canvas id="gl" aria-hidden="true"></canvas>
+<div id="vignette"></div>
+<div id="grain"></div>
+<div class="cur-dot" id="cursor"></div>
+
+<!-- ============================================================ preloader -->
+<div id="pre">
+  <div class="pre-in">
+    <div class="pre-mark">
+      <svg viewBox="0 0 44 44" fill="none" aria-hidden="true">
+        <circle cx="22" cy="25" r="9.5" stroke="#ff3d7f" stroke-width="1.2"/>
+        <path d="M6 12h32M9.5 17h25M22 8v28" stroke="#dce5ea" stroke-width="1.2"/>
+      </svg>
+    </div>
+    <div class="pre-jp cn">东方明珠</div>
+    <div class="pre-bar"><i id="pre-fill"></i></div>
+    <div class="pre-meta">
+      <span>Raising the tower over the river</span><b><span id="pre-pct">0</span>%</b>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ nav -->
+<header class="nav" id="nav">
+  <a class="brand" href="#top" data-cursor>
+    <svg viewBox="0 0 44 44" fill="none" aria-hidden="true">
+      <circle cx="22" cy="27" r="8.6" fill="#ff3d7f" fill-opacity=".9"/>
+      <circle cx="22" cy="13" r="3.4" fill="#ff8fb8" fill-opacity=".9"/>
+      <path d="M22 6.5v3.2M9 32h26" stroke="#dce5ea" stroke-width="1.5"/>
+    </svg>
+    <span class="brand-tx"><b>PEARL</b><i>NIGHT OVER THE HUANGPU</i></span>
+  </a>
+  <nav class="nav-links" id="navlinks">
+    <a class="nav-link" href="#pearl" data-cursor><span>The Pearl</span><span class="alt">明珠</span></a>
+    <a class="nav-link" href="#skyline" data-cursor><span>Skyline</span><span class="alt">天际</span></a>
+    <a class="nav-link" href="#bund" data-cursor><span>The Bund</span><span class="alt">外滩</span></a>
+    <a class="nav-link" href="#afterglow" data-cursor><span>Afterglow</span><span class="alt">夜上海</span></a>
+  </nav>
+  <button class="nav-burger" aria-label="Menu" data-cursor><i></i><i></i></button>
+</header>
+
+<div class="page" id="top">
+
+<!-- ============================================================ hero -->
+<section class="hero" id="hero" data-cam="0">
+  <div class="hero-top">
+    <div class="eyebrow" data-rv="fade"><span class="dot"></span> Chapter 00 — The Crossing</div>
+    <h1 class="display h-hero" data-rv="fade">
+      <span class="mask-line"><span>Where the river</span></span>
+      <span class="mask-line"><span>meets the</span></span>
+      <span class="mask-line"><span>night.</span></span>
+    </h1>
+    <p class="hero-sub body" data-rv="up">Cross the Huangpu toward a tower of light — three spheres above
+      the water, a city burning behind them.</p>
+  </div>
+
+  <div class="hero-spacer"></div>
+
+  <div class="hero-foot">
+    <div class="hero-cue" data-rv="fade"><span>Scroll to cross</span><span class="track"><i></i></span></div>
+    <div class="chapters" id="chips">
+      <div class="chip" data-chip="0" data-rv="up" data-cursor><span class="num">01</span>
+        <span class="tx"><b>The Pearl</b><p>Three spheres and a needle, burning rose above Pudong.</p></span></div>
+      <div class="chip" data-chip="1" data-rv="up" data-cursor><span class="num">02</span>
+        <span class="tx"><b>Three Towers</b><p>Shanghai Tower, Jin Mao and the opener, one skyline.</p></span></div>
+      <div class="chip" data-chip="2" data-rv="up" data-cursor><span class="num">03</span>
+        <span class="tx"><b>The Bund</b><p>A century of stone across the water, lit like a stage.</p></span></div>
+      <div class="chip" data-chip="3" data-rv="up" data-cursor><span class="num">04</span>
+        <span class="tx"><b>Afterglow</b><p>The river keeps the light long after the city sleeps.</p></span></div>
+    </div>
+  </div>
+
+  <a class="peek" href="#skyline" data-view="3" data-rv="fade" data-cursor aria-label="Preview: the Pearl, above the river">
+    <span class="peek-fr" data-frame></span>
+    <span class="peek-play"><svg viewBox="0 0 22 22" fill="none"><path d="M8 5.6 16.4 11 8 16.4z" fill="#dce5ea"/></svg></span>
+    <span class="peek-cap"><b class="cn">东方明珠</b><i>The Pearl — above the river</i></span>
+  </a>
+
+  <div class="word-fb" aria-hidden="true">PEARL</div>
+
+  <div class="hero-side" data-rv="up">
+    <span class="v cn">东方明珠</span>
+  </div>
+</section>
+
+<!-- ============================================================ chapter I -->
+<section class="sec" id="pearl" data-cam="1">
+  <!-- foreground: the riverbank arrives first, the bough at the edge, reeds last -->
+  <div class="fg" data-fg="pearl" aria-hidden="true">
+    <span class="fg-el fg-bank" data-fg-in="left">
+      <img src="" data-fg-img="reeds" alt="" width="2048" height="1024" loading="lazy" decoding="async">
+    </span>
+    <span class="fg-el fg-bough fg-el--sway" data-fg-in="right">
+      <img src="" data-fg-img="bough" alt="" width="1536" height="1024" loading="lazy" decoding="async">
+    </span>
+  </div>
+  <div class="sec-head" data-rv="fade">
+    <span class="k"><b>01</b> — The Pearl</span><span class="rule"></span><span class="k cn">东方明珠</span>
+  </div>
+  <div class="gate-grid">
+    <h2 class="display h-sec" data-rv="up">Three spheres above the river, one tower of light.</h2>
+    <div class="gate-copy">
+      <p class="lead" data-rv="up">East of the Bund, on the Pudong bank, the Oriental Pearl rises out of the
+        dark — eleven spheres strung along a concrete needle, its largest globe burning rose above the water.</p>
+      <p class="body" data-rv="up">It opened in 1995, when this shore was still fields and cranes. Tonight the
+        river carries its light in long wet streaks, and the skyline behind it has grown three times taller. The
+        Pearl does not change. The city around it will not stop.</p>
+      <a class="arrowlink" href="#skyline" data-rv="fade" data-cursor>
+        <span>Cross to Lujiazui</span>
+        <span class="ar"><svg viewBox="0 0 14 14" fill="none"><path d="M3 11 11 3M5 3h6v6" stroke="#dce5ea" stroke-width="1.3"/></svg></span>
+      </a>
+    </div>
+  </div>
+  <div class="gate-stats" data-rv="up">
+    <div><b>468</b><span>Metres</span></div>
+    <div><b>1995</b><span>Opened</span></div>
+    <div><b>50</b><span>Lower sphere</span></div>
+    <div><b>∞</b><span>The night</span></div>
+  </div>
+</section>
+
+<!-- ============================================================ chapter II -->
+<section class="sec" id="skyline" data-cam="2">
+  <!-- foreground: the skyline framed by two banks of reeds -->
+  <div class="fg" data-fg="skyline" aria-hidden="true">
+    <span class="fg-el fg-bank fg-el--sway" data-fg-in="left">
+      <img src="" data-fg-img="reeds" alt="" width="2048" height="1024" loading="lazy" decoding="async">
+    </span>
+    <span class="fg-el fg-bank2 fg-el--flip" data-fg-in="right">
+      <img src="" data-fg-img="reeds" alt="" width="2048" height="1024" loading="lazy" decoding="async">
+    </span>
+  </div>
+  <div class="sec-head" data-rv="fade">
+    <span class="k"><b>02</b> — The Skyline</span><span class="rule"></span><span class="k cn">三件套</span>
+  </div>
+  <div class="cards" id="cards">
+    <article class="card" data-rv="up" data-view="0" data-cursor>
+      <div class="card-fr" data-frame>
+        <span class="card-ar"><svg viewBox="0 0 14 14" fill="none"><path d="M3 11 11 3M5 3h6v6" stroke="#dce5ea" stroke-width="1.3"/></svg></span>
+        <i class="glow" style="--gx:80.2%; --gy:20.0%; --gr:21%; --gt:6.1s; --gt2:9.7s; --gc1:rgba(255,190,120,.50); --gc2:rgba(220,140,60,.24)"></i>
+        <div class="card-lab"><b>Shanghai Tower</b><span class="jp cn">上海中心</span></div>
+      </div>
+      <div class="card-meta"><span>The spiral</span><span>01 / 03</span></div>
+    </article>
+    <article class="card" data-rv="up" data-view="1" data-cursor>
+      <div class="card-fr" data-frame>
+        <span class="card-ar"><svg viewBox="0 0 14 14" fill="none"><path d="M3 11 11 3M5 3h6v6" stroke="#dce5ea" stroke-width="1.3"/></svg></span>
+        <i class="glow glow--flame" style="--gx:60.5%; --gy:42.0%; --gr:15%; --gt:3.7s; --gt2:5.3s; --gc1:rgba(150,220,240,.62); --gc2:rgba(90,160,200,.30)"></i>
+        <div class="card-lab"><b>Jin Mao</b><span class="jp cn">金茂</span></div>
+      </div>
+      <div class="card-meta"><span>The pagoda</span><span>02 / 03</span></div>
+    </article>
+    <article class="card" data-rv="up" data-view="2" data-cursor>
+      <div class="card-fr" data-frame>
+        <span class="card-ar"><svg viewBox="0 0 14 14" fill="none"><path d="M3 11 11 3M5 3h6v6" stroke="#dce5ea" stroke-width="1.3"/></svg></span>
+        <i class="glow" style="--gx:50.0%; --gy:16.0%; --gr:19%; --gt:7.3s; --gt2:11.2s; --gc1:rgba(255,110,180,.52); --gc2:rgba(220,70,140,.24)"></i>
+        <div class="card-lab"><b>SWFC</b><span class="jp cn">环球金融</span></div>
+      </div>
+      <div class="card-meta"><span>The opener</span><span>03 / 03</span></div>
+    </article>
+  </div>
+</section>
+
+<!-- ============================================================ chapter III -->
+<section class="sec" id="bund" data-cam="3">
+  <!-- foreground: a bough from the left, reeds closing the right -->
+  <div class="fg" data-fg="bund" aria-hidden="true">
+    <span class="fg-el fg-bough fg-el--sway" data-fg-in="left">
+      <img src="" data-fg-img="bough" alt="" width="1536" height="1024" loading="lazy" decoding="async">
+    </span>
+    <span class="fg-el fg-bank" data-fg-in="right">
+      <img src="" data-fg-img="reeds" alt="" width="2048" height="1024" loading="lazy" decoding="async">
+    </span>
+  </div>
+  <div class="sec-head" data-rv="fade">
+    <span class="k"><b>03</b> — The Bund</span><span class="rule"></span><span class="k cn">外滩</span>
+  </div>
+  <div class="cur-head">
+    <h2 class="display h-sec" data-rv="up">Five towers. One hundred years. A single skyline.</h2>
+    <p class="body-lg" data-rv="up">Each tower is a story, not a statistic. You cross the river, walk the
+      Bund, and leave with one landmark worth keeping.</p>
+  </div>
+  <div class="cur" id="cur">
+    <div class="les" data-les="0" data-cursor>
+      <span class="k">01</span>
+      <h3>The Pearl<em class="cn">东方明珠</em></h3>
+      <p>Three spheres and a needle — the oldest landmark of the new age.</p>
+      <span class="t">468 m</span><i class="bar"></i>
+    </div>
+    <div class="les" data-les="1" data-cursor>
+      <span class="k">02</span>
+      <h3>Jin Mao<em class="cn">金茂</em></h3>
+      <p>A pagoda in glass, tiered for luck, opened in 1999.</p>
+      <span class="t">420 m</span><i class="bar"></i>
+    </div>
+    <div class="les" data-les="2" data-cursor>
+      <span class="k">03</span>
+      <h3>SWFC<em class="cn">环球金融</em></h3>
+      <p>A bottle-opener cut into the wind, finished in 2008.</p>
+      <span class="t">492 m</span><i class="bar"></i>
+    </div>
+    <div class="les" data-les="3" data-cursor>
+      <span class="k">04</span>
+      <h3>Shanghai Tower<em class="cn">上海中心</em></h3>
+      <p>The spiral, twisted twice, completed in 2015.</p>
+      <span class="t">632 m</span><i class="bar"></i>
+    </div>
+    <div class="les" data-les="4" data-cursor>
+      <span class="k">05</span>
+      <h3>Night Shanghai<em class="cn">夜上海</em></h3>
+      <p>And the whole lit waterfront that keeps them all company.</p>
+      <span class="t">∞</span><i class="bar"></i>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ chapter IV -->
+<section class="sec fin" id="afterglow" data-cam="4">
+  <!-- foreground: the closing horizon — bough and reeds -->
+  <div class="fg" data-fg="afterglow" aria-hidden="true">
+    <span class="fg-el fg-bough fg-el--sway" data-fg-in="left">
+      <img src="" data-fg-img="bough" alt="" width="1536" height="1024" loading="lazy" decoding="async">
+    </span>
+    <span class="fg-el fg-bank" data-fg-in="up">
+      <img src="" data-fg-img="reeds" alt="" width="2048" height="1024" loading="lazy" decoding="async">
+    </span>
+  </div>
+  <div class="eyebrow" data-rv="fade">Chapter 04 — Afterglow</div>
+  <h2 class="display" data-rv="up">Afterglow</h2>
+  <p class="body-lg" data-rv="up">The Pearl does not go dark. Take the crossing whenever the city gets
+    loud — it is always the same river, and never the same light.</p>
+  <a class="cta" href="#top" data-rv="fade" data-cursor>
+    <i></i><span>Cross the river</span>
+    <svg viewBox="0 0 14 14" fill="none" width="13" height="13"><path d="M3 11 11 3M5 3h6v6" stroke="#dce5ea" stroke-width="1.3"/></svg>
+  </a>
+</section>
+
+<!-- ============================================================ footer -->
+<footer class="foot" id="foot" data-cam="5">
+  <!-- foreground: one planting along the lower edge of the colophon -->
+  <div class="fg" data-fg="foot" aria-hidden="true">
+    <span class="fg-el fg-bank" data-fg-in="up">
+      <img src="" data-fg-img="reeds" alt="" width="2048" height="1024" loading="lazy" decoding="async">
+    </span>
+    <span class="fg-el fg-bough fg-el--sway" data-fg-in="up">
+      <img src="" data-fg-img="bough" alt="" width="1536" height="1024" loading="lazy" decoding="async">
+    </span>
+  </div>
+  <div class="foot-grid">
+    <div class="foot-brand">
+      <svg viewBox="0 0 44 44" fill="none" width="34" height="34" aria-hidden="true">
+        <circle cx="22" cy="27" r="8.6" fill="#ff3d7f" fill-opacity=".9"/>
+        <circle cx="22" cy="13" r="3.4" fill="#ff8fb8" fill-opacity=".9"/>
+        <path d="M22 6.5v3.2M9 32h26" stroke="#dce5ea" stroke-width="1.5"/>
+      </svg>
+      <p>A five-chapter night crossing over the Huangpu toward the Oriental Pearl. Three live skyline
+        windows inside a single procedural Three.js frame.</p>
+    </div>
+    <div><h4>Chapters</h4><ul>
+      <li><a href="#pearl" data-cursor>The Pearl</a></li>
+      <li><a href="#skyline" data-cursor>Three Towers</a></li>
+      <li><a href="#bund" data-cursor>The Bund</a></li>
+      <li><a href="#afterglow" data-cursor>Afterglow</a></li>
+    </ul></div>
+    <div><h4>Skyline</h4><ul>
+      <li><a href="#skyline" data-cursor>Shanghai Tower</a></li>
+      <li><a href="#skyline" data-cursor>Jin Mao</a></li>
+      <li><a href="#skyline" data-cursor>SWFC</a></li>
+      <li><a href="#pearl" data-cursor>The Pearl</a></li>
+    </ul></div>
+    <div><h4>Elsewhere</h4><ul>
+      <li><a href="#top" data-cursor>Journal</a></li>
+      <li><a href="#top" data-cursor>Field notes</a></li>
+      <li><a href="#top" data-cursor>Colophon</a></li>
+    </ul></div>
+  </div>
+  <div class="foot-base">
+    <span>© 2026 PEARL — 浦江夜航</span>
+    <span class="cn">上海的夜是一首诗</span>
+    <span>WebGL · Onest · Shanghai</span>
+  </div>
+</footer>
+
+</div><!-- /.page -->
+
+<div id="fg-sky" aria-hidden="true"></div>
+
+<div class="rail" id="rail"></div>
+
+
+<script src="runtime/three.min.js"></script>
+<script>
+/* =====================================================================
+   PEARL —a live night crossing over the Huangpu, after dark.
+   Everything on this page is generated at runtime: no photographs,
+   no video, no external assets beyond three.js and two subset fonts.
+   ===================================================================== */
+(function () {
+'use strict';
+
+/* ------------------------------------------------------------ 0 ·basics */
+const Q      = new URLSearchParams(location.search);
+const qs     = (k, d) => { const v = Q.get(k); return v === null ? d : v; };
+const qn     = (k, d) => { const v = Q.get(k); return v === null ? d : parseFloat(v); };
+const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const COARSE = matchMedia('(hover: none)').matches;
+
+const clamp  = (v, a, b) => v < a ? a : (v > b ? b : v);
+const sat    = v => clamp(v, 0, 1);
+const lerp   = (a, b, t) => a + (b - a) * t;
+const smooth = (e0, e1, x) => { const t = sat((x - e0) / (e1 - e0)); return t * t * (3 - 2 * t); };
+const easeOut= t => 1 - Math.pow(1 - t, 3);
+const easeIO = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const TAU    = Math.PI * 2;
+const damp   = (cur, to, rate, dt) => lerp(cur, to, 1 - Math.exp(-rate * dt));
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function noise2D(seed) {
+  const rnd = mulberry32(seed), p = new Uint8Array(256), perm = new Uint8Array(512);
+  for (let i = 0; i < 256; i++) p[i] = i;
+  for (let i = 255; i > 0; i--) { const j = (rnd() * (i + 1)) | 0, t = p[i]; p[i] = p[j]; p[j] = t; }
+  for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
+  const G = [[1, 1], [-1, 1], [1, -1], [-1, -1], [1, 0], [-1, 0], [0, 1], [0, -1]];
+  const fade = t => t * t * t * (t * (t * 6 - 15) + 10);
+  return function (x, y) {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const X = xi & 255, Y = yi & 255, xf = x - xi, yf = y - yi;
+    const u = fade(xf), v = fade(yf);
+    const g = (h, dx, dy) => { const q = G[h & 7]; return q[0] * dx + q[1] * dy; };
+    const aa = perm[perm[X] + Y], ab = perm[perm[X] + Y + 1];
+    const ba = perm[perm[X + 1] + Y], bb = perm[perm[X + 1] + Y + 1];
+    return lerp(lerp(g(aa, xf, yf), g(ba, xf - 1, yf), u),
+                lerp(g(ab, xf, yf - 1), g(bb, xf - 1, yf - 1), u), v);
+  };
+}
+function fbm(n, x, y, oct, lac, gain) {
+  let a = .5, f = 1, s = 0, m = 0;
+  for (let i = 0; i < (oct || 4); i++) { s += a * n(x * f, y * f); m += a; a *= (gain || .5); f *= (lac || 2); }
+  return s / m;
+}
+
+/* ------------------------------------------------------------ 1 ·canvas */
+function cvs(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+const hex = (r, g, b) => 'rgb(' + (r | 0) + ',' + (g | 0) + ',' + (b | 0) + ')';
+
+function fbmCanvas(W, H, seed, octaves, baseCells, contrast) {
+  const out = cvs(W, H), o = out.getContext('2d');
+  o.fillStyle = '#808080'; o.fillRect(0, 0, W, H);
+  let cells = baseCells || 3, alpha = 1;
+  for (let i = 0; i < (octaves || 5); i++) {
+    const n = cvs(cells, cells), nx = n.getContext('2d');
+    const im = nx.createImageData(cells, cells), d = im.data, r = mulberry32(seed + i * 977);
+    for (let k = 0; k < cells * cells; k++) {
+      const v = 128 + (r() - .5) * 255 * (contrast || 1);
+      d[k * 4] = d[k * 4 + 1] = d[k * 4 + 2] = clamp(v, 0, 255); d[k * 4 + 3] = 255;
+    }
+    nx.putImageData(im, 0, 0);
+    o.globalAlpha = alpha;
+    o.globalCompositeOperation = i === 0 ? 'source-over' : 'overlay';
+    o.imageSmoothingEnabled = true; o.imageSmoothingQuality = 'high';
+    o.drawImage(n, 0, 0, W, H);
+    cells *= 2; alpha *= .62;
+  }
+  o.globalAlpha = 1; o.globalCompositeOperation = 'source-over';
+  return out;
+}
+
+function normalFromHeight(hc, strength) {
+  const W = hc.width, H = hc.height;
+  const b = cvs(W, H), bx = b.getContext('2d');
+  bx.filter = 'blur(1.1px)'; bx.drawImage(hc, 0, 0); bx.filter = 'none';
+  const src = bx.getImageData(0, 0, W, H).data;
+  const out = cvs(W, H), ox = out.getContext('2d');
+  const im = ox.createImageData(W, H), d = im.data;
+  const at = (x, y) => src[(((y + H) % H) * W + ((x + W) % W)) * 4] / 255;
+  const s = strength || 2.4;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const gx = (at(x + 1, y) - at(x - 1, y)) * s;
+    const gy = (at(x, y + 1) - at(x, y - 1)) * s;
+    let nx = -gx, ny = gy, nz = 1;
+    const il = 1 / Math.hypot(nx, ny, nz);
+    const i = (y * W + x) * 4;
+    d[i]     = (nx * il * .5 + .5) * 255;
+    d[i + 1] = (ny * il * .5 + .5) * 255;
+    d[i + 2] = (nz * il * .5 + .5) * 255;
+    d[i + 3] = 255;
+  }
+  ox.putImageData(im, 0, 0);
+  return out;
+}
+
+/* ------------------------------------------------------- 2 ·surfaces */
+/* the night sky over Shanghai: black at altitude, dissolving into the warm
+   glow of the city at the horizon so the backdrop and the depth cue meet */
+function texSky() {
+  const W = 512, H = 512, c = cvs(W, H), x = c.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, 'rgb(3,7,14)');
+  g.addColorStop(.38, 'rgb(7,13,24)');
+  g.addColorStop(.68, 'rgb(13,22,36)');
+  g.addColorStop(.9, 'rgb(26,38,56)');
+  g.addColorStop(1, 'rgb(36,48,66)');
+  x.fillStyle = g; x.fillRect(0, 0, W, H);
+  x.globalAlpha = .3; x.globalCompositeOperation = 'overlay';
+  x.drawImage(fbmCanvas(W, H, 313, 5, 3, .9), 0, 0);
+  x.globalAlpha = 1; x.globalCompositeOperation = 'source-over';
+  /* the warm valley glow of a city that never sleeps */
+  const wg = x.createRadialGradient(W * .50, H * 1.02, 2, W * .50, H * 1.02, W * .56);
+  wg.addColorStop(0, 'rgba(255,150,80,.30)'); wg.addColorStop(.45, 'rgba(160,84,40,.12)'); wg.addColorStop(1, 'rgba(0,0,0,0)');
+  x.fillStyle = wg; x.fillRect(0, 0, W, H);
+  /* the rose breath of the Pearl itself */
+  const pg = x.createRadialGradient(W * .76, H * 1.0, 2, W * .76, H * 1.0, W * .30);
+  pg.addColorStop(0, 'rgba(255,60,130,.20)'); pg.addColorStop(.55, 'rgba(180,40,100,.06)'); pg.addColorStop(1, 'rgba(0,0,0,0)');
+  x.fillStyle = pg; x.fillRect(0, 0, W, H);
+  /* a scatter of stars, faint enough to survive the bloom */
+  const rnd = mulberry32(881);
+  for (let i = 0; i < 360; i++) {
+    const sx = rnd() * W, sy = rnd() * H * .74, r = .5 + rnd() * rnd() * 1.6;
+    x.fillStyle = 'rgba(205,225,238,' + (.12 + rnd() * .36) * (1 - sy / H) + ')';
+    x.beginPath(); x.arc(sx, sy, r, 0, TAU); x.fill();
+  }
+  return c;
+}
+
+/* the Huangpu at night —nearly black, carrying streaks of city light */
+function texWater() {
+  const W = 512, H = 512, c = cvs(W, H), x = c.getContext('2d');
+  x.fillStyle = '#050a10'; x.fillRect(0, 0, W, H);
+  x.globalCompositeOperation = 'overlay'; x.globalAlpha = .55;
+  x.drawImage(fbmCanvas(W, H, 63, 5, 8, 1.2), 0, 0);
+  x.globalAlpha = 1; x.globalCompositeOperation = 'source-over';
+  /* standing water bands */
+  const rnd = mulberry32(23);
+  for (let i = 0; i < 90; i++) {
+    x.fillStyle = 'rgba(0,0,0,' + (rnd() * .14) + ')';
+    x.fillRect(rnd() * W, rnd() * H, rnd() * 240, 1 + rnd() * 4);
+  }
+  /* faint blue sheen */
+  const g = x.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, 'rgba(40,90,120,.10)'); g.addColorStop(.5, 'rgba(20,40,60,.04)'); g.addColorStop(1, 'rgba(0,0,0,.35)');
+  x.fillStyle = g; x.fillRect(0, 0, W, H);
+  const h = cvs(W, H), hx = h.getContext('2d');
+  hx.fillStyle = '#808080'; hx.fillRect(0, 0, W, H);
+  for (let i = 0; i < 120; i++) { hx.fillStyle = 'rgba(0,0,0,.25)'; hx.fillRect(rnd() * W, rnd() * H, 40 + rnd() * 120, 2 + rnd() * 5); }
+  const r = cvs(W, H), rx = r.getContext('2d');
+  rx.fillStyle = '#2a2a2a'; rx.fillRect(0, 0, W, H);
+  rx.globalCompositeOperation = 'lighten'; rx.globalAlpha = .6;
+  rx.drawImage(fbmCanvas(W, H, 77, 4, 5, 1.4), 0, 0);
+  rx.globalAlpha = 1; rx.globalCompositeOperation = 'source-over';
+  return { map: c, normal: normalFromHeight(h, 1.2), rough: r };
+}
+
+/* glazed tower glass: dark blue-green curtain wall, mullions, sparse lit cells */
+function texGlass(seed, tilt) {
+  const W = 512, H = 1024, c = cvs(W, H), x = c.getContext('2d');
+  const rnd = mulberry32(seed || 101);
+  x.fillStyle = '#081018'; x.fillRect(0, 0, W, H);
+  /* vertical mullions */
+  x.fillStyle = 'rgba(150,190,210,.08)';
+  for (let i = 0; i < 20; i++) x.fillRect(i * (W / 20) + (W / 40), 0, 1.4, H);
+  /* floor lines */
+  x.fillStyle = 'rgba(0,0,0,.45)';
+  for (let y = 0; y < H; y += 30) x.fillRect(0, y, W, 1.6);
+  /* lit windows */
+  for (let i = 0; i < 1100; i++) {
+    const px2 = rnd() * W, py = rnd() * H;
+    const w = 2 + rnd() * 6, h = 3 + rnd() * 4;
+    const cool = rnd();
+    if (cool > .48) x.fillStyle = 'rgba(' + (140 + Math.random() * 90 | 0) + ',' + (190 + Math.random() * 50 | 0) + ',' + 235 + ',' + (.2 + rnd() * .42) + ')';
+    else x.fillStyle = 'rgba(' + (255) + ',' + (170 + rnd() * 60 | 0) + ',' + (90 + rnd() * 60 | 0) + ',' + (.16 + rnd() * .44) + ')';
+    x.fillRect(px2, py, w, h);
+  }
+  /* glass sheen from upper-left */
+  const g = x.createLinearGradient(0, 0, W, H);
+
+  g.addColorStop(0, 'rgba(120,170,220,.14)'); g.addColorStop(.6, 'rgba(40,80,110,.05)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  x.fillStyle = g; x.fillRect(0, 0, W, H);
+  if (tilt !== false) { const h = cvs(W, H), hx = h.getContext('2d'); hx.fillStyle = '#808080'; hx.fillRect(0, 0, W, H);
+    for (let i = 0; i < 40; i++) { hx.fillStyle = 'rgba(0,0,0,.6)'; hx.fillRect(rnd() * W, rnd() * H, 2, 4 + rnd() * 14); }
+    return { map: c, normal: normalFromHeight(h, 1.5) };
+  }
+  return c;
+}
+
+/* the Pearl sphere at night: a dense lattice of lit cells, pink at the heart */
+function texPearl(size) {
+  const S = size || 1024, c = cvs(S, S), x = c.getContext('2d');
+  const rnd = mulberry32(311);
+  x.fillStyle = '#0a0d18'; x.fillRect(0, 0, S, S);
+  /* faint spherical shading so the lattice reads round under no light */
+  const sh = x.createRadialGradient(S * .38, S * .32, S * .05, S * .5, S * .5, S * .72);
+  sh.addColorStop(0, 'rgba(120,140,190,.16)'); sh.addColorStop(.5, 'rgba(30,40,70,.08)'); sh.addColorStop(1, 'rgba(0,0,0,.55)');
+  x.fillStyle = sh; x.fillRect(0, 0, S, S);
+  const cols = 30, rows = 30, cs = S / cols;
+  /* the structural lattice bars (the sphere's ribs) */
+  x.strokeStyle = 'rgba(16,24,36,.9)'; x.lineWidth = cs * .09;
+  for (let i = 0; i <= cols; i++) { x.beginPath(); x.moveTo(i * cs, 0); x.lineTo(i * cs, S); x.stroke(); }
+  for (let j = 0; j <= rows; j++) { x.beginPath(); x.moveTo(0, j * cs); x.lineTo(S, j * cs); x.stroke(); }
+  /* lit cells —mostly pink, some warm, a few cold */
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+    const cx2 = (i + .5) * cs, cy = (j + .5) * cs;
+    const r = rnd();
+    if (r < .20) continue;               /* dark panel */
+    const pink = rnd();
+    let col;
+    if (pink > .62)      col = '255,70,140';
+    else if (pink > .30) col = '255,110,180';
+    else if (pink > .12) col = '255,150,90';
+    else                 col = '150,200,230';
+    const a = .16 + rnd() * .5;
+    const g = x.createRadialGradient(cx2, cy, cs * .02, cx2, cy, cs * .5);
+    g.addColorStop(0, 'rgba(' + col + ',' + a + ')');
+    g.addColorStop(.6, 'rgba(' + col + ',' + (a * .32) + ')');
+    g.addColorStop(1, 'rgba(255,60,130,0)');
+    x.fillStyle = g;
+    x.beginPath(); x.arc(cx2, cy, cs * .5, 0, TAU); x.fill();
+  }
+  /* a few bright "beacon" points on the sphere's equator */
+  for (let i = 0; i < 26; i++) {
+    const bx2 = rnd() * S, by = rnd() * S;
+    const g = x.createRadialGradient(bx2, by, 0, bx2, by, 6 + rnd() * 14);
+    g.addColorStop(0, 'rgba(255,150,210,' + (.5 + rnd() * .5) + ')');
+    g.addColorStop(1, 'rgba(255,80,150,0)');
+    x.fillStyle = g; x.beginPath(); x.arc(bx2, by, 6 + rnd() * 14, 0, TAU); x.fill();
+  }
+  return c;
+}
+
+/* concrete for the needle and its struts: cold, ribbed, faintly lit by the river */
+function texConcrete(seed) {
+  const W = 512, H = 512, c = cvs(W, H), x = c.getContext('2d'), rnd = mulberry32(seed || 41);
+  x.fillStyle = '#161b22'; x.fillRect(0, 0, W, H);
+  x.globalCompositeOperation = 'overlay'; x.globalAlpha = .8;
+  x.drawImage(fbmCanvas(W, H, 41, 6, 3, 1), 0, 0);
+  x.globalAlpha = 1; x.globalCompositeOperation = 'source-over';
+  for (let i = 1; i < 6; i++) { x.fillStyle = 'rgba(0,0,0,.5)'; x.fillRect(0, (H / 6) * i - 1, W, 2); }
+  for (let i = 0; i < 130; i++) { x.fillStyle = 'rgba(0,0,0,' + (.05 + rnd() * .16) + ')'; x.fillRect(rnd() * W, rnd() * H, 1.2 + rnd() * 2, 1.2 + rnd() * 3); }
+  /* faint cool bounce light near the top, warm at the base (city + water) */
+  const g = x.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, 'rgba(103,198,221,.08)'); g.addColorStop(.5, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(255,154,77,.10)');
+  x.fillStyle = g; x.fillRect(0, 0, W, H);
+  const h = cvs(W, H), hx = h.getContext('2d');
+  hx.fillStyle = '#808080'; hx.fillRect(0, 0, W, H);
+  for (let i = 1; i < 6; i++) { hx.fillStyle = '#2c2c2c'; hx.fillRect(0, (H / 6) * i - 2, W, 4); }
+  for (let i = 0; i < 130; i++) { hx.fillStyle = 'rgba(0,0,0,.5)'; hx.fillRect(rnd() * W, rnd() * H, 1 + rnd() * 2, 1 + rnd() * 3); }
+  return { map: c, normal: normalFromHeight(h, 1.6) };
+}
+
+/* the Bund as seen across the water: a low, hundred-year-old wall of lit stone */
+function texBund() {
+  const W = 2048, H = 512, c = cvs(W, H), x = c.getContext('2d'), rnd = mulberry32(773);
+  x.clearRect(0, 0, W, H);
+  const base = H * .84;
+  let px = 0;
+  while (px < W) {
+    const bw = 46 + rnd() * 96, bh = 60 + rnd() * 120, top = base - bh;
+    x.fillStyle = '#03070b';
+    x.fillRect(px, top, bw, bh);
+    x.fillStyle = 'rgba(18,28,38,.85)';
+    if (rnd() > .55) {
+      x.fillRect(px + bw * .3, top - 7, bw * .4, 7);
+      if (rnd() > .5) x.fillRect(px + bw * .42, top - 15, bw * .16, 8);
+    }
+    for (let wy = top + 9; wy < base - 6; wy += 17) {
+      for (let wx = px + 7; wx < px + bw - 7; wx += 15) {
+        if (rnd() > .80) {
+          x.fillStyle = rnd() > .42 ? 'rgba(255,196,130,' + (.5 + rnd() * .4) + ')' : 'rgba(150,198,226,' + (.3 + rnd() * .3) + ')';
+          x.fillRect(wx, wy, 5, 7);
+        }
+      }
+    }
+    px += bw + 5;
+  }
+  /* the glow the buildings cast upward */
+  const g = x.createLinearGradient(0, base - 8, 0, 0);
+  g.addColorStop(0, 'rgba(255,150,80,.16)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  x.fillStyle = g; x.fillRect(0, 0, W, base);
+  return c;
+}
+
+/* a generic Pudong skyline silhouette for the far backdrop: tall lit boxes */
+function texCity(seed) {
+  const W = 2048, H = 640, c = cvs(W, H), x = c.getContext('2d'), rnd = mulberry32(seed || 977);
+  x.clearRect(0, 0, W, H);
+  const base = H * .9;
+  let px = 0;
+  while (px < W) {
+    const bw = 40 + rnd() * 130, bh = 60 + rnd() * 320, top = base - bh;
+    x.fillStyle = '#04090d'; x.fillRect(px, top, bw, bh);
+    /* antenna */ if (rnd() > .6) { x.fillRect(px + bw * .47, top - 12 - rnd() * 18, 2, 12 + rnd() * 20); }
+    /* cap light */ if (rnd() > .8) {
+      x.fillStyle = 'rgba(255,120,120,.9)';
+      x.fillRect(px + bw * .46, top - 3, 3, 3);
+    }
+    for (let wy = top + 10; wy < base - 8; wy += 18) {
+      for (let wx = px + 8; wx < px + bw - 8; wx += 16) {
+        if (rnd() > .72) {
+          x.fillStyle = rnd() > .5 ? 'rgba(255,200,130,' + (.4 + rnd() * .4) + ')' : 'rgba(150,205,235,' + (.25 + rnd() * .3) + ')';
+          x.fillRect(wx, wy, 6, 8);
+        }
+      }
+    }
+    px += bw + 6;
+  }
+  const g = x.createLinearGradient(0, base - 4, 0, 0);
+  g.addColorStop(0, 'rgba(255,150,80,.18)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  x.fillStyle = g; x.fillRect(0, 0, W, base);
+  return c;
+}
+
+/* a soft radial glow —reused for haze, ripples and embers */
+function texGlow() {
+  const S = 128, c = cvs(S, S), x = c.getContext('2d');
+  const g = x.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(.28, 'rgba(255,255,255,.85)');
+  g.addColorStop(.66, 'rgba(255,255,255,.28)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, S, S);
+  return c;
+}
+/* an elongated drifting light —the city glow carried on the water */
+function texWisp() {
+  const W = 64, H = 256, c = cvs(W, H), x = c.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(.5, 'rgba(255,255,255,.9)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, W, H);
+  return c;
+}
+/* a soft ring for water ripples */
+function texRing() {
+  const S = 128, c = cvs(S, S), x = c.getContext('2d');
+  const g = x.createRadialGradient(S / 2, S / 2, S * .1, S / 2, S / 2, S * .5);
+  g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(.8, 'rgba(255,255,255,.8)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, S, S);
+  return c;
+}
+
+/* procedural foreground cut-outs (riverbank reeds, a plane-tree bough) —   painted once at boot and handed to the DOM as data URLs */
+function fgReeds(seed) {
+  const W = 2048, H = 1024, c = cvs(W, H), x = c.getContext('2d');
+  const rnd = mulberry32(seed || 51);
+  x.clearRect(0, 0, W, H);
+  /* bank body: a low dark ridge along the bottom */
+  x.beginPath(); x.moveTo(0, H);
+  for (let i = 0; i <= W; i += 8) {
+    const t = i / W, n = fbm(noise2D(seed * 13 + 5), t * 4.6, .5, 4, 2.05, .52);
+    x.lineTo(i, H - (.16 + .30 * (n * .5 + .5)) * H);
+  }
+  x.lineTo(W, H); x.closePath();
+  const bg = x.createLinearGradient(0, H * .5, 0, H);
+  bg.addColorStop(0, '#0d161c'); bg.addColorStop(1, '#04070c');
+  x.fillStyle = bg; x.fill();
+  /* a scatter of reed blades —thin, slightly warm at the tip */
+  x.lineCap = 'round';
+  const n2 = noise2D(seed * 31 + 7);
+  for (let i = 0; i < 620; i++) {
+    const bx = rnd() * W, bh = 40 + rnd() * (H * .40) * (1 - Math.abs(bx / W - .5) * 1.2 + .2);
+    const lean = (n2(bx * .01, seed) * .5 + .5 - .5) * 1.5;
+    x.strokeStyle = 'rgba(' + (6 + rnd() * 6 | 0) + ',' + (12 + rnd() * 8 | 0) + ',' + (15 + rnd() * 9 | 0) + ',' + (.5 + rnd() * .5) + ')';
+    x.lineWidth = .8 + rnd() * 1.6;
+    x.beginPath(); x.moveTo(bx, H);
+    x.quadraticCurveTo(bx + lean * 16, H - bh * .6, bx + lean * 30, H - bh);
+    x.stroke();
+    if (rnd() > .86) {  /* a faint lit tip —a far window catching the reed */
+      x.fillStyle = 'rgba(255,190,120,' + (rnd() * .30) + ')';
+      x.beginPath(); x.arc(bx + lean * 30, H - bh, 1 + rnd() * 1.6, 0, TAU); x.fill();
+    }
+  }
+  /* a few flat leaves lying in the water near the bank */
+  x.fillStyle = 'rgba(6,10,14,.85)';
+  for (let i = 0; i < 40; i++) {
+    const lx = rnd() * W, ly = H - 6 - rnd() * 26;
+    x.save(); x.translate(lx, ly); x.rotate(rnd() * TAU);
+    x.beginPath(); x.ellipse(0, 0, 5 + rnd() * 16, 2 + rnd() * 4, 0, 0, TAU); x.fill();
+    x.restore();
+  }
+  return c;
+}
+function fgBough(seed) {
+  const W = 1536, H = 1024, c = cvs(W, H), x = c.getContext('2d');
+  const rnd = mulberry32(seed || 711);
+  x.clearRect(0, 0, W, H);
+  const n = noise2D(seed * 17 + 3);
+  /* trunk rising from the bottom-left corner, branches fanning right */
+  x.lineCap = 'round'; x.lineJoin = 'round';
+  function limb(x0, y0, x1, y1, w) {
+    x.strokeStyle = 'rgba(10,16,22,.92)';
+    x.lineWidth = w;
+    x.beginPath(); x.moveTo(x0, y0);
+    const mx = (x0 + x1) / 2 + (n(x0 * .004, y0 * .004) * 60), my = (y0 + y1) / 2 + 26;
+    x.quadraticCurveTo(mx, my, x1, y1); x.stroke();
+  }
+  limb(40, H + 40, 180, H * .62, 52);
+  limb(150, H * .66, 330, H * .42, 30);
+  limb(300, H * .45, 540, H * .30, 16);
+  limb(500, H * .32, 820, H * .24, 9);
+  limb(780, H * .26, 1150, H * .18, 5);
+  limb(1120, H * .19, 1480, H * .12, 3);
+  /* hanging twigs with sparse leaves —the plane tree, half bare at night */
+  for (let i = 0; i < 60; i++) {
+    const tx = 60 + rnd() * (W - 100), ty = 120 + rnd() * (H * .6);
+    const len = 30 + rnd() * 90;
+    x.strokeStyle = 'rgba(12,18,24,.9)'; x.lineWidth = 1 + rnd() * 2.4;
+    x.beginPath(); x.moveTo(tx, ty);
+    x.quadraticCurveTo(tx + rnd() * 20 - 10, ty + len * .6, tx + rnd() * 34 - 17, ty + len); x.stroke();
+    if (rnd() > .42) {
+      const lx2 = tx + rnd() * 30 - 15, ly = ty + len * .8;
+      x.fillStyle = 'rgba(' + (18 + rnd() * 12 | 0) + ',' + (26 + rnd() * 14 | 0) + ',' + (30 + rnd() * 14 | 0) + ',' + .9 + ')';
+      x.save(); x.translate(lx2, ly); x.rotate(rnd() * TAU);
+      x.beginPath(); x.ellipse(0, 0, 14 + rnd() * 22, 9 + rnd() * 14, 0, 0, TAU); x.fill();
+      x.restore();
+    }
+  }
+  /* a couple of leaves catching city light */
+  for (let i = 0; i < 8; i++) {
+    const lx2 = rnd() * W, ly = 140 + rnd() * (H * .55);
+    x.fillStyle = 'rgba(255,190,120,' + (rnd() * .10) + ')';
+    x.beginPath(); x.arc(lx2, ly, 2 + rnd() * 3, 0, TAU); x.fill();
+  }
+  return c;
+}
+function toDataURL(c) { return c.toDataURL('image/png'); }
+
+
+/* ------------------------------------------------------- 3 · materials */
+let renderer, scene, camera, gl;
+const lib = {};
+function tx(c) {
+  const t = new THREE.CanvasTexture(c);
+  t.encoding = THREE.sRGBEncoding;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 8;
+  return t;
+}
+function libn(name, fn) { if (!lib[name]) lib[name] = fn(); return lib[name]; }
+function surface(def, scale, o) {
+  o = o || {};
+  const s = scale || [1, 1];
+  const m = new THREE.MeshStandardMaterial({
+    roughness: o.roughness !== undefined ? o.roughness : .92,
+    metalness: o.metalness !== undefined ? o.metalness : .06,
+    envMapIntensity: o.env !== undefined ? o.env : .5
+  });
+  if (def.map) { m.map = tx(def.map); m.map.repeat.set(s[0], s[1]); }
+  if (def.normal) { m.normalMap = tx(def.normal); m.normalMap.repeat.set(s[0], s[1]); m.normalScale = new THREE.Vector2(o.normalScale || 1, o.normalScale || 1); }
+  if (def.rough) { m.roughnessMap = tx(def.rough); m.roughnessMap.repeat.set(s[0], s[1]); }
+  if (o.color !== undefined) m.color.set(o.color);
+  if (o.emissive !== undefined) { m.emissive = new THREE.Color(o.emissive); }
+  if (o.emissiveMap) { m.emissiveMap = tx(o.emissiveMap); m.emissiveMap.repeat.set(s[0], s[1]); }
+  if (o.emissiveIntensity !== undefined) m.emissiveIntensity = o.emissiveIntensity;
+  if (o.opacity !== undefined) { m.transparent = true; m.opacity = o.opacity; }
+  return m;
+}
+function glowMat(color, map, scale, op) {
+  const t = tx(map || libn('glow', texGlow));
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  const m = new THREE.MeshBasicMaterial({
+    map: t, transparent: true, depthWrite: false,
+    opacity: op !== undefined ? op : 1,
+    color: new THREE.Color(color), blending: THREE.AdditiveBlending
+  });
+  if (scale) { t.repeat.set(scale, scale); }
+  return m;
+}
+
+/* the plane that catches the grade: build scene helpers */
+function plane(w, h, mat, x, y, z, rx, ry, rz) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+  m.position.set(x, y, z);
+  if (rx) m.rotation.x = rx;
+  if (ry) m.rotation.y = ry;
+  if (rz) m.rotation.z = rz;
+  return m;
+}
+
+/* ------------------------------------------------------- 4 · the scene */
+const RIVER_Z = -30;      /* river bed centre */
+const PEARL_X = 8, PEARL_Z = -40;
+const TOWER_A = { x: -16, z: -47, h: 34 };   /* Shanghai Tower */
+const TOWER_B = { x: -9,  z: -44, h: 24 };   /* Jin Mao */
+const TOWER_C = { x: -25, z: -42, h: 27 };   /* SWFC */
+
+function buildRiver() {
+  const mat = surface(libn('water', () => texWater()), [80, 60], { color: 0x0c1620, roughness: .42, metalness: .30, normalScale: 1.1, env: .7 });
+  const bed = new THREE.Mesh(new THREE.PlaneGeometry(420, 300), mat);
+  bed.rotation.x = -Math.PI / 2;
+  bed.position.set(0, -0.06, RIVER_Z);
+  scene.add(bed);
+  /* standing light —the reflection of the city pools on the water */
+  const streaks = new THREE.Group();
+  const wisp = new THREE.MeshBasicMaterial({
+    map: tx(libn('wisp', texWisp)), transparent: true, depthWrite: false,
+    blending: THREE.AdditiveBlending, color: new THREE.Color(0xffb46a),
+    opacity: .16
+  });
+  wisp.map.wrapS = wisp.map.wrapT = THREE.ClampToEdgeWrapping;
+  function streak(x, z, len, w, rot, tint) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(len, w), wisp.clone());
+    m.material.color.set(tint || 0xffb46a);
+    m.rotation.x = -Math.PI / 2;
+    m.rotation.z = rot;
+    m.position.set(x, 0.04, z);
+    m.userData = { ph: .12 + Math.random() * .22, seed: Math.random() * 100, tw: .3 + Math.random() * .5 };
+    streaks.add(m);
+  }
+  streak(PEARL_X, PEARL_Z + 26, 34, 5.6, 0.10, 0xff3d7f);
+  streak(PEARL_X - 3, PEARL_Z + 30, 26, 3.4, -0.14, 0xff7aa0);
+  streak(TOWER_A.x, TOWER_A.z + 34, 30, 5.0, -0.10, 0xffc27a);
+  streak(TOWER_B.x, TOWER_B.z + 30, 24, 3.8, 0.06, 0x9fd8ea);
+  streak(TOWER_C.x, TOWER_C.z + 28, 22, 3.6, 0.16, 0xffb46a);
+  streak(-30, -56, 40, 7.0, 0.02, 0xff9a4d);   /* the Bund across the water */
+  scene.add(streaks);
+  window.__streaks = streaks;
+}
+
+/* the riverbank embankments —low dark walls holding the water back */
+function buildBanks() {
+  const mat = surface(libn('bank', () => texConcrete(11)), [40, 1], { color: 0x141a20, roughness: .95, normalScale: .8 });
+  for (const sx of [-1, 1]) {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(260, 2.2, 7), mat);
+    b.position.set(sx * 33, -1.0, -34);
+    scene.add(b);
+  }
+}
+
+/* the Pearl —a concrete needle, three spheres of light, three struts */
+function buildPearl() {
+  const g = new THREE.Group();
+  const col = surface(libn('concrete', () => texConcrete(41)), [3, 1], { color: 0x8b959e, roughness: .9, normalScale: 1 });
+  const pink = new THREE.MeshBasicMaterial({ map: tx(texPearl(1024)), toneMapped: false });
+  pink.map.wrapS = pink.map.wrapT = THREE.ClampToEdgeWrapping;
+  /* the pedestal hall */
+  const deck = new THREE.Mesh(new THREE.CylinderGeometry(4.6, 5.0, 2.6, 20), col);
+  deck.position.y = 1.3; g.add(deck);
+  /* the needle */
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(.55, .95, 30, 20), col);
+  shaft.position.y = 16.5; g.add(shaft);
+  /* the antenna */
+  const ant = new THREE.Mesh(new THREE.CylinderGeometry(.03, .30, 13, 12), col);
+  ant.position.y = 37.5; g.add(ant);
+  /* three spheres */
+  const s1 = new THREE.Mesh(new THREE.SphereGeometry(4.6, 44, 34), pink);
+  s1.position.y = 14.2; g.add(s1);
+  const s2 = new THREE.Mesh(new THREE.SphereGeometry(4.0, 40, 30), pink);
+  s2.position.y = 26.0; g.add(s2);
+  const s3 = new THREE.Mesh(new THREE.SphereGeometry(1.35, 26, 20), pink);
+  s3.position.y = 33.6; g.add(s3);
+  /* the three struts climbing to the lower sphere */
+  function strut(from, to, r) {
+    const dir = new THREE.Vector3().subVectors(to, from);
+    const len = dir.length();
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 10), col);
+    m.position.copy(from).addScaledVector(dir, .5);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+    g.add(m);
+  }
+  for (let k = 0; k < 3; k++) {
+    const a = k / 3 * TAU + Math.PI / 2;
+    strut(new THREE.Vector3(Math.cos(a) * 3.6, 2.2, Math.sin(a) * 3.6),
+          new THREE.Vector3(Math.cos(a) * 1.0, 13.0, Math.sin(a) * 1.0), .42);
+  }
+  g.position.set(PEARL_X, 0, PEARL_Z);
+  scene.add(g);
+  /* the rose halo behind the lower sphere */
+  const halo = new THREE.Mesh(new THREE.SphereGeometry(6.4, 24, 24),
+    glowMat(0xff3d7f, libn('glow', texGlow), 1, .34));
+  halo.position.set(PEARL_X, 14.2, PEARL_Z - 1);
+  halo.userData = { ph: .5, tw: 6.2 };
+  scene.add(halo);
+  const halo2 = new THREE.Mesh(new THREE.SphereGeometry(4.6, 24, 24),
+    glowMat(0xff5f9f, libn('glow', texGlow), 1, .22));
+  halo2.position.set(PEARL_X, 26, PEARL_Z - .8);
+  halo2.userData = { ph: .5, tw: 4.8 };
+  scene.add(halo2);
+  window.__pearl = g;
+}
+
+/* a curtain-wall skyline: parametric tall glass towers */
+function buildTower(x, z, h, geoFn, seed, emissiveTop) {
+  const g = new THREE.Group();
+  const glMat = surface(libn('glass' + seed, () => texGlass(101 + seed * 37)), [1, 1.4], {
+    color: 0x7fa3b5, roughness: .35, metalness: .55, normalScale: .8, env: .8
+  });
+  const parts = geoFn(h);
+  for (const p of parts) {
+    const m = new THREE.Mesh(p.geo, glMat);
+    m.position.copy(p.pos);
+    g.add(m);
+  }
+  /* a beacon / cap light */
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(Math.max(.22, h * .012), 10, 10),
+    new THREE.MeshBasicMaterial({ color: emissiveTop || 0xff6a7a }));
+  cap.position.set(0, h + Math.max(.6, h * .03), 0);
+  g.add(cap);
+  const capGlow = new THREE.Mesh(new THREE.SphereGeometry(h * .09, 14, 14),
+    glowMat(emissiveTop || 0xff6a7a, libn('glow', texGlow), 1, .5));
+  capGlow.position.set(0, h - h * .06, 0);
+  g.add(capGlow);
+  g.position.set(x, 0, z);
+  scene.add(g);
+  return g;
+}
+/* Shanghai Tower —the spiral: stacked boxes, each a little more rotated */
+function spiralGeo(h) {
+  const parts = [], seg = 26;
+  for (let i = 0; i < seg; i++) {
+    const t = i / seg;
+    const w = lerp(3.2, 1.05, t);
+    const geo = new THREE.BoxGeometry(w, h / seg, w);
+    geo.rotateY(i * .24);
+    parts.push({ geo, pos: new THREE.Vector3(0, t * h + h / seg / 2, 0) });
+  }
+  return parts;
+}
+/* Jin Mao —the pagoda: tiers that taper and step out in turn */
+function pagodaGeo(h) {
+  const parts = [], tiers = 15, th = h / tiers;
+  for (let i = 0; i < tiers; i++) {
+    const t = i / tiers;
+    const w = lerp(3.4, 1.15, t);
+    parts.push({ geo: new THREE.BoxGeometry(w, th, w), pos: new THREE.Vector3(0, t * h + th / 2, 0) });
+    if (i % 2 === 0) parts.push({ geo: new THREE.BoxGeometry(w * 1.28, th * .5, w * 1.28), pos: new THREE.Vector3(0, t * h + th, 0) });
+  }
+  return parts;
+}
+/* SWFC —the opener: a tapering shaft with a notch cut at the top */
+function openerGeo(h) {
+  const parts = [], seg = 18, th = h / seg;
+  for (let i = 0; i < seg; i++) {
+    const t = i / seg;
+    const w = lerp(3.6, 1.9, t);
+    parts.push({ geo: new THREE.BoxGeometry(w, th, w), pos: new THREE.Vector3(0, t * h + th / 2, 0) });
+  }
+  /* the prongs flanking the notch */
+  const topY = h * .78, prongH = h - topY, pw = 1.05;
+  parts.push({ geo: new THREE.BoxGeometry(pw, prongH, 1.35), pos: new THREE.Vector3(-1.15, topY + prongH / 2, 0) });
+  parts.push({ geo: new THREE.BoxGeometry(pw, prongH, 1.35), pos: new THREE.Vector3(1.15, topY + prongH / 2, 0) });
+  return parts;
+}
+function buildTowers() {
+  buildTower(TOWER_A.x, TOWER_A.z, TOWER_A.h, spiralGeo, 1, 0xffc27a);
+  buildTower(TOWER_B.x, TOWER_B.z, TOWER_B.h, pagodaGeo, 2, 0x9fd8ea);
+  buildTower(TOWER_C.x, TOWER_C.z, TOWER_C.h, openerGeo, 3, 0xff9ab4);
+  /* the rest of Pudong: a scatter of quieter glass towers */
+  const rnd = mulberry32(555);
+  const mat = surface(libn('glassP', () => texGlass(909)), [1, 1.6], {
+    color: 0x6f94a6, roughness: .4, metalness: .5, normalScale: .7, env: .7
+  });
+  for (let i = 0; i < 16; i++) {
+    const x = lerp(0, 40, rnd()), z = lerp(-36, -62, rnd());
+    if (x < 14 && z > -52) continue;              /* keep the Pearl clear */
+    const h = 8 + rnd() * 22;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(1.8 + rnd() * 2.6, h, 1.8 + rnd() * 2.6), mat);
+    m.position.set(x, h / 2, z);
+    scene.add(m);
+    if (rnd() > .72) {
+      const top = new THREE.Mesh(new THREE.BoxGeometry(.5, .5, .5),
+        new THREE.MeshBasicMaterial({ color: rnd() > .5 ? 0xff8a6a : 0x9fd8ea }));
+      top.position.set(x, h + .3, z);
+      scene.add(top);
+    }
+  }
+}
+
+/* the Bund —the old stone waterfront across the water, far to the left */
+function buildBund() {
+  const t = tx(libn('bund', texBund));
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  const mat = new THREE.MeshBasicMaterial({ map: t, transparent: true, opacity: .96 });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(260, 42), mat);
+  m.position.set(-64, 16, -82);
+  m.rotation.y = .16;
+  scene.add(m);
+  /* the glow the Bund throws across the water */
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(260, 26), glowMat(0xff9a4d, libn('glow', texGlow), 1, .30));
+  glow.position.set(-64, 1.2, -80);
+  glow.rotation.y = .16;
+  glow.userData = { ph: .5, tw: 5.4 };
+  scene.add(glow);
+  /* a far Pudong skyline silhouette behind the real towers */
+  const t2 = tx(libn('city', () => texCity(977)));
+  t2.wrapS = t2.wrapT = THREE.ClampToEdgeWrapping;
+  const mat2 = new THREE.MeshBasicMaterial({ map: t2, transparent: true, opacity: .85 });
+  const m2 = new THREE.Mesh(new THREE.PlaneGeometry(260, 46), mat2);
+  m2.position.set(46, 18, -74);
+  m2.rotation.y = -.10;
+  scene.add(m2);
+  const glow2 = new THREE.Mesh(new THREE.PlaneGeometry(300, 30), glowMat(0xffb46a, libn('glow', texGlow), 1, .24));
+  glow2.position.set(30, 1.0, -72);
+  glow2.rotation.y = -.06;
+  glow2.userData = { ph: .5, tw: 6.6 };
+  scene.add(glow2);
+}
+
+/* the sky dome */
+function buildSky() {
+  const mat = new THREE.MeshBasicMaterial({ map: tx(libn('sky', texSky)), side: THREE.BackSide, fog: false });
+  const m = new THREE.Mesh(new THREE.SphereGeometry(320, 32, 24), mat);
+  m.position.set(0, 0, -40);
+  scene.add(m);
+}
+
+/* atmosphere —haze slabs, drifting motes of city light, water ripples */
+function buildAtmosphere() {
+  const HAZE = [];
+  const rnd = mulberry32(191);
+  for (let i = 0; i < 9; i++) {
+    const x = rnd() * 70 - 35, z = -18 - rnd() * 52, w = 20 + rnd() * 60, h = 8 + rnd() * 26;
+    const tint = z < -46 ? (rnd() > .5 ? 0xff9a4d : 0x5f8fb0) : (rnd() > .4 ? 0xff7a3f : 0x7aa0c0);
+    const slab = plane(w, h, glowMat(tint, libn('glow', texGlow), 1, .06 + rnd() * .10), x, 6 + rnd() * 14, z);
+    slab.userData = { ph: .5 + rnd() * .4, tw: 4 + rnd() * 6 };
+    scene.add(slab); HAZE.push(slab);
+  }
+  window.__haze = HAZE;
+  /* light motes —dust of the city, warm and pink */
+  const N = 260, pos = new Float32Array(N * 3), col = new Float32Array(N * 3), sp = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    pos[i * 3] = rnd() * 120 - 45;
+    pos[i * 3 + 1] = 1 + rnd() * 40;
+    pos[i * 3 + 2] = -10 - rnd() * 70;
+    const warm = rnd();
+    const base = warm > .62 ? [255, 150, 80] : (warm > .3 ? [255, 90, 150] : [120, 200, 230]);
+    col[i * 3] = base[0] / 255; col[i * 3 + 1] = base[1] / 255; col[i * 3 + 2] = base[2] / 255;
+    sp[i] = .04 + rnd() * .16;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const mat = new THREE.PointsMaterial({ size: .5, map: tx(libn('glow', texGlow)), vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: .85, sizeAttenuation: true });
+  mat.map.wrapS = mat.map.wrapT = THREE.ClampToEdgeWrapping;
+  const pts = new THREE.Points(geo, mat);
+  pts.userData = { sp, pos: geo.attributes.position.array };
+  scene.add(pts);
+  window.__motes = pts;
+  /* water ripples */
+  const rings = [];
+  for (let i = 0; i < 12; i++) {
+    const r = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), glowMat(0xbfe4f2, libn('ring', texRing), 1, .5));
+    r.rotation.x = -Math.PI / 2;
+    r.position.set(rnd() * 90 - 45, 0.06, -8 - rnd() * 56);
+    r.userData = { ph: rnd() * TAU, tw: 5 + rnd() * 9 };
+    scene.add(r); rings.push(r);
+  }
+  window.__rings = rings;
+}
+
+/* the brand: PEARL set in the night sky like a far sign */
+function buildWordmark() {
+  const font = '600 300px Wordmark';
+  const canvas = cvs(2048, 512), x = canvas.getContext('2d');
+  x.fillStyle = 'rgba(0,0,0,0)'; x.clearRect(0, 0, canvas.width, canvas.height);
+  x.font = font;
+  const txm = x.measureText('PEARL');
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.fillStyle = '#dfe9f0';
+  x.fillText('PEARL', canvas.width / 2, canvas.height / 2 + 8);
+  const txt = new THREE.CanvasTexture(canvas);
+  txt.encoding = THREE.sRGBEncoding;
+  const mat = new THREE.MeshBasicMaterial({ map: txt, transparent: true, opacity: .9, depthWrite: false, side: THREE.DoubleSide });
+  const plane = new THREE.Mesh(new THREE.PlaneGeometry(64, 16), mat);
+  plane.position.set(-2, 24, -58);
+  plane.lookAt(2, 16, -30);
+  scene.add(plane);
+  window.__word = plane;
+}
+
+/* lights */
+function buildLights() {
+  scene.add(new THREE.HemisphereLight(0x31465e, 0x04070c, .55));
+  const key = new THREE.DirectionalLight(0x8fb0d0, .5);
+  key.position.set(30, 60, 20);
+  scene.add(key);
+  const city = new THREE.DirectionalLight(0xff9a4d, .22);
+  city.position.set(-20, 6, 40);
+  scene.add(city);
+  const p1 = new THREE.PointLight(0xff3d7f, 4.2, 95, 1.8);
+  p1.position.set(PEARL_X, 14.2, PEARL_Z + 2);
+  scene.add(p1);
+  const p2 = new THREE.PointLight(0xff5f9f, 1.5, 65, 1.8);
+  p2.position.set(PEARL_X, 26, PEARL_Z + 2);
+  scene.add(p2);
+  const p3 = new THREE.PointLight(0xff9a4d, 1.4, 90, 1.8);
+  p3.position.set(TOWER_A.x + 6, 12, TOWER_A.z + 6);
+  scene.add(p3);
+  const p4 = new THREE.PointLight(0x7fc6dc, .8, 60, 1.8);
+  p4.position.set(TOWER_B.x - 4, 8, TOWER_B.z + 6);
+  scene.add(p4);
+}
+
+
+/* ------------------------------------------------------- 5 · GL */
+function initGL() {
+  gl = document.getElementById('gl');
+  renderer = new THREE.WebGLRenderer({
+    canvas: gl, antialias: true, alpha: false,
+    powerPreference: 'high-performance', stencil: false, depth: true
+  });
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.toneMapping = THREE.NoToneMapping;
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, COARSE ? 1.6 : 2));
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x04070d);
+  scene.fog = new THREE.FogExp2(0x04070d, 0.0115);
+  camera = new THREE.PerspectiveCamera(42, 1, .5, 900);
+}
+
+/* ------------------------------------------------------- 6 · post */
+const POST = { B: [], ready: false };
+function initPost() {
+  const type = renderer.capabilities.isWebGL2 ? THREE.HalfFloatType : THREE.UnsignedByteType;
+  const mkRT = (w, h) => {
+    const t = new THREE.WebGLRenderTarget(Math.max(2, w | 0), Math.max(2, h | 0), {
+      type, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat, depthBuffer: false, stencilBuffer: false
+    });
+    t.texture.generateMipmaps = false;
+    return t;
+  };
+  POST.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  POST.scene = new THREE.Scene();
+  POST.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), null);
+  POST.quad.frustumCulled = false;
+  POST.scene.add(POST.quad);
+  const V = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
+  const mk = (fs, extra) => new THREE.ShaderMaterial({
+    uniforms: Object.assign({ tDiffuse: { value: null } }, extra || {}),
+    vertexShader: V, fragmentShader: fs, depthTest: false, depthWrite: false
+  });
+  POST.matBright = mk(
+    'uniform sampler2D tDiffuse; varying vec2 vUv;' +
+    'void main(){ vec4 c=texture2D(tDiffuse,vUv); float l=dot(c.rgb,vec3(.2126,.7152,.0722));' +
+    'float k=smoothstep(.55,.82,l); vec3 b=c.rgb*k*(.6+l*.7); gl_FragColor=vec4(b,1.0); }');
+  POST.matDown = mk(
+    'uniform sampler2D tDiffuse; uniform vec2 texel; varying vec2 vUv;' +
+    'void main(){ vec2 o=texel*.5; vec3 s=texture2D(tDiffuse,vUv).rgb;' +
+    's+=texture2D(tDiffuse,vUv+vec2(o.x,0.)).rgb; s+=texture2D(tDiffuse,vUv+vec2(0.,o.y)).rgb;' +
+    's+=texture2D(tDiffuse,vUv+o).rgb; gl_FragColor=vec4(s*.25,1.0); }',
+    { texel: { value: new THREE.Vector2() } });
+  const gauss = 'uniform sampler2D tDiffuse; uniform vec2 texel; varying vec2 vUv;';
+  const blurRest = 'vec3 s=texture2D(tDiffuse,vUv).rgb;' +
+    's+=texture2D(tDiffuse,vUv+o*1.3846153846).rgb*2.0; s+=texture2D(tDiffuse,vUv-o*1.3846153846).rgb*2.0;' +
+    's+=texture2D(tDiffuse,vUv+o*3.2307692308).rgb; s+=texture2D(tDiffuse,vUv-o*3.2307692308).rgb;' +
+    'gl_FragColor=vec4(s/8.0,1.0);';
+  POST.matBlurH = mk(gauss + 'void main(){ vec2 o=texel;' + blurRest + '}', { texel: { value: new THREE.Vector2() } });
+  POST.matBlurV = mk(gauss + 'void main(){ vec2 o=vec2(texel.y,texel.x);' + blurRest + '}', { texel: { value: new THREE.Vector2() } });
+  POST.matCompose = mk(
+    'uniform sampler2D tDiffuse,tB0,tB1,tB2,tB3; uniform float w0,w1,w2,w3;' +
+    'uniform float exposure,bloom,time; varying vec2 vUv;' +
+    'void main(){ vec3 c=texture2D(tDiffuse,vUv).rgb;' +
+    'vec3 b=texture2D(tB0,vUv).rgb*w0 + texture2D(tB1,vUv).rgb*w1 + texture2D(tB2,vUv).rgb*w2 + texture2D(tB3,vUv).rgb*w3;' +
+    'c+=b*bloom; c*=exposure;' +
+    'c=c/(c+vec3(.92));' +
+    'float l=dot(c,vec3(.2126,.7152,.0722));' +
+    'vec3 cool=vec3(.955,1.0,1.06); vec3 warm=vec3(1.06,1.0,.93);' +
+    'c=mix(c*cool,c*warm,smoothstep(.05,.72,l));' +
+    'c=mix(c,c*vec3(1.0,.985,.94),smoothstep(.62,1.0,l)*.5);' +
+    'vec2 q=vUv-.5; float d=dot(q,q); c*=1.0-smoothstep(.26,.9,d*1.4);' +
+    'c+=vec3(.007,.009,.016); c=pow(c,vec3(1.0/2.2));' +
+    'gl_FragColor=vec4(c,1.0); }',
+    { tB0: { value: null }, tB1: { value: null }, tB2: { value: null }, tB3: { value: null },
+      w0: { value: 1 }, w1: { value: .72 }, w2: { value: .5 }, w3: { value: .34 },
+      exposure: { value: qn('ex', 1.26) }, bloom: { value: qn('bloom', 1.0) }, time: { value: 0 } });
+  function resizePost() {
+    const W = gl.width, H = gl.height;
+    if (!W || !H) return;
+    POST.H = mkRT(W, H);
+    const div = [1, 2, 4, 8];
+    POST.B = div.map(d => mkRT(W / d, H / d));
+    POST.tmp = mkRT(W / 2, H / 2);
+    POST.ready = true;
+  }
+  POST.resize = resizePost;
+  function run(mat, from, to) {
+    mat.uniforms.tDiffuse.value = from.texture;
+    POST.quad.material = mat;
+    renderer.setRenderTarget(to);
+    renderer.setViewport(0, 0, to.width, to.height);
+    renderer.render(POST.scene, POST.camera);
+  }
+  POST.run = run;
+  function full() {
+    if (!POST.ready) return;
+    renderer.setRenderTarget(POST.H);
+    renderer.setViewport(0, 0, POST.H.width, POST.H.height);
+    renderer.render(scene, camera);
+    run(POST.matBright, POST.H, POST.B[0]);
+    for (let i = 1; i < 4; i++) run(POST.matDown, POST.B[i - 1], POST.B[i]);
+    for (let i = 0; i < 4; i++) {
+      POST.matBlurH.uniforms.texel.value.set(1 / POST.B[i].width, 0);
+      POST.matBlurV.uniforms.texel.value.set(0, 1 / POST.B[i].height);
+      run(POST.matBlurH, POST.B[i], POST.tmp);
+      run(POST.matBlurV, POST.tmp, POST.B[i]);
+    }
+    const C = POST.matCompose.uniforms;
+    C.tDiffuse.value = POST.H.texture;
+    C.tB0.value = POST.B[0].texture; C.tB1.value = POST.B[1].texture;
+    C.tB2.value = POST.B[2].texture; C.tB3.value = POST.B[3].texture;
+    C.time.value = tGlobal;
+    POST.quad.material = POST.matCompose;
+    renderer.setRenderTarget(null);
+    renderer.setViewport(0, 0, gl.width, gl.height);
+    renderer.render(POST.scene, POST.camera);
+  }
+  POST.full = full;
+}
+
+/* ------------------------------------------------------- 7 · the rig */
+const WPS = [
+  { p: [-4, 5.4, 15.5], f: [7, 20, -34],  fov: 34 },   /* 0 hero: over the water, the Pearl ahead */
+  { p: [3, 3.6, 12.5],  f: [8, 26, -38],  fov: 52 },   /* 1 pearl: close to the water, looking up */
+  { p: [9, 7.2, 5.5],   f: [-12, 26, -44], fov: 42 },  /* 2 skyline: pan to the three towers */
+  { p: [-12, 8.8, -3.5], f: [-14, 18, -50], fov: 46 }, /* 3 bund: across the water */
+  { p: [4, 16, -20],    f: [2, 40, -58],  fov: 44 },   /* 4 afterglow: high above */
+  { p: [6, 20, -30],    f: [-4, 4, -54],  fov: 48 }    /* 5 footer: descending into the night */
+];
+const WPT = [0, .16, .40, .62, .84, 1];
+function catmull(p0, p1, p2, p3, t) {
+  const t2 = t * t, t3 = t2 * t;
+  const ax = 2 * p1[0], bx = -p0[0] + p2[0], cx = 2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0], dx = -p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0];
+  const ay = 2 * p1[1], by = -p0[1] + p2[1], cy = 2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1], dy = -p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1];
+  const az = 2 * p1[2], bz = -p0[2] + p2[2], cz = 2 * p0[2] - 5 * p1[2] + 4 * p2[2] - p3[2], dz = -p0[2] + 3 * p1[2] - 3 * p2[2] + p3[2];
+  return [
+    .5 * (ax + bx * t + cx * t2 + dx * t3),
+    .5 * (ay + by * t + cy * t2 + dy * t3),
+    .5 * (az + bz * t + cz * t2 + dz * t3)
+  ];
+}
+function applyCamera(p) {
+  const seg = WPS.length - 1;
+  let i = seg - 1;
+  for (let k = 0; k < seg; k++) if (p < WPT[k + 1]) { i = k; break; }
+  const span = WPT[i + 1] - WPT[i];
+  let u = span > 0 ? (p - WPT[i]) / span : 0;
+  u = easeIO(sat(u));
+  const P = WPS.map(w => w.p), F = WPS.map(w => w.f);
+  const cp = catmull(P[Math.max(0, i - 1)], P[i], P[i + 1], P[Math.min(seg, i + 2)], u);
+  const cf = catmull(F[Math.max(0, i - 1)], F[i], F[i + 1], F[Math.min(seg, i + 2)], u);
+  let fov = lerp(WPS[i].fov, WPS[i + 1].fov, u);
+  const aspect = vh / vw;
+  if (aspect > 1.02) fov *= lerp(1, 1.42, sat((aspect - 1.02) / 1.5));
+  const sway = .06, sx = Math.sin(tGlobal * .31) * sway, sy = Math.cos(tGlobal * .27) * sway;
+  camera.position.set(cp[0] + sx, cp[1] + sy, cp[2]);
+  camera.lookAt(cf[0], cf[1] + Math.sin(tGlobal * .22) * .5, cf[2]);
+  camera.fov = fov;
+  camera.updateProjectionMatrix();
+}
+
+/* ------------------------------------------------------- 8 · scroll↔hapters */
+let scroll = 0, targetScroll = 0, progress = 0, eased = 0, total = 1, vw = innerWidth, vh = innerHeight;
+function progressFor(i) { const d = 1 / 6; return sat((eased - i * d) / d); }
+function updateScroll(dt) {
+  scroll = damp(scroll, targetScroll, REDUCE ? 26 : 5.0, dt);
+  total = Math.max(1, document.body.scrollHeight - vh);
+  progress = clamp(scroll / total, 0, 1);
+  eased = easeIO(sat(progress * 1.02 - 0.005));
+}
+
+/* ------------------------------------------------------- 9 · card viewports */
+const CARD_CAM = [
+  { p: [-16, 5, -36], f: [-16, 24, -47], fov: 26 },
+  { p: [-9, 4, -35],  f: [-9, 19, -44],  fov: 26 },
+  { p: [-25, 5, -33], f: [-25, 20, -42], fov: 26 },
+  { p: [2, 4.4, 9],   f: [8, 18, -38],   fov: 30 }
+];
+const CARDS = [];
+function initCards() {
+  document.querySelectorAll('[data-view]').forEach((el, i) => {
+    const cam = new THREE.PerspectiveCamera(CARD_CAM[i].fov, 1, .5, 900);
+    CARDS.push({ el, cam, cfg: CARD_CAM[i] });
+  });
+}
+function renderCards() {
+  const dpr = renderer.getPixelRatio();
+  let drew = false;
+  for (const c of CARDS) {
+    const fr = c.el.querySelector('[data-frame]');
+    const r = fr ? fr.getBoundingClientRect() : c.el.getBoundingClientRect();
+    if (!r.width || !r.height || r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw) continue;
+    c.cam.aspect = r.width / r.height;
+    c.cam.position.set(c.cfg.p[0] + Math.sin(tGlobal * .2) * .2, c.cfg.p[1], c.cfg.p[2]);
+    c.cam.lookAt(c.cfg.f[0], c.cfg.f[1], c.cfg.f[2]);
+    c.cam.updateProjectionMatrix();
+    const x = Math.round(r.left * dpr), y = Math.round(gl.height - (r.top + r.height) * dpr);
+    const w = Math.max(2, Math.round(r.width * dpr)), h = Math.max(2, Math.round(r.height * dpr));
+    renderer.setScissorTest(true);
+    renderer.setViewport(x, y, w, h);
+    renderer.setScissor(x, y, w, h);
+    renderer.setRenderTarget(null);
+    renderer.render(scene, c.cam);
+    drew = true;
+  }
+  renderer.setScissorTest(false);
+  if (drew) { renderer.setViewport(0, 0, gl.width, gl.height); renderer.setScissor(0, 0, gl.width, gl.height); }
+}
+
+/* ------------------------------------------------------- 10 · page */
+let tGlobal = 0;
+function initPage() {
+  /* grain */
+  const g = cvs(180, 180), gx = g.getContext('2d'), grnd = mulberry32(99);
+  const id = gx.createImageData(180, 180);
+  for (let i = 0; i < 180 * 180; i++) { const v = (grnd() * 255) | 0; id.data[i * 4] = id.data[i * 4 + 1] = id.data[i * 4 + 2] = v; id.data[i * 4 + 3] = 255; }
+  gx.putImageData(id, 0, 0);
+  document.getElementById('grain').style.backgroundImage = 'url(' + g.toDataURL() + ')';
+  /* foreground cut-outs to data URLs */
+  const reeds = toDataURL(fgReeds(51)), bough = toDataURL(fgBough(711));
+  document.querySelectorAll('[data-fg-img]').forEach(el => {
+    el.src = el.getAttribute('data-fg-img') === 'reeds' ? reeds : bough;
+  });
+  /* rail */
+  const rail = document.getElementById('rail');
+  ['hero', 'pearl', 'skyline', 'bund', 'afterglow'].forEach(id => {
+    const b = document.createElement('button');
+    b.setAttribute('aria-label', 'Go to ' + id);
+    b.innerHTML = '<i></i>';
+    b.addEventListener('click', () => {
+      const el = document.getElementById(id);
+      if (el) window.scrollTo({ top: el.offsetTop, behavior: REDUCE ? 'auto' : 'smooth' });
+    });
+    rail.appendChild(b);
+  });
+  /* nav */
+  const nav = document.getElementById('nav'), burger = document.querySelector('.nav-burger');
+  let lastY = 0;
+  window.addEventListener('scroll', () => {
+    const y = window.pageYOffset;
+    targetScroll = y;
+    nav.classList.toggle('stuck', y > 24);
+    nav.classList.toggle('hide', y > 120 && y > lastY);
+    lastY = y;
+  }, { passive: true });
+  burger.addEventListener('click', () => {
+    nav.classList.toggle('menu-open');
+    document.documentElement.classList.toggle('nav-open');
+    burger.classList.toggle('active');
+  });
+  document.querySelectorAll('.nav-link').forEach(a => a.addEventListener('click', () => {
+    nav.classList.remove('menu-open'); document.documentElement.classList.remove('nav-open'); burger.classList.remove('active');
+  }));
+  /* chips */
+  document.querySelectorAll('[data-chip]').forEach(ch => ch.addEventListener('click', () => {
+    const secs = document.querySelectorAll('.sec');
+    const el = secs[+ch.dataset.chip];
+    if (el) window.scrollTo({ top: el.offsetTop, behavior: REDUCE ? 'auto' : 'smooth' });
+  }));
+  /* lessons →the skyline */
+  document.querySelectorAll('.les').forEach(les => les.addEventListener('click', () => {
+    const el = document.getElementById('skyline');
+    if (el) window.scrollTo({ top: el.offsetTop, behavior: REDUCE ? 'auto' : 'smooth' });
+  }));
+  /* reveals */
+  const io = new IntersectionObserver(es => es.forEach(e => {
+    if (e.isIntersecting) { e.target.classList.add('rv-in'); io.unobserve(e.target); }
+  }), { threshold: .14 });
+  document.querySelectorAll('[data-rv]').forEach(el => io.observe(el));
+  /* cursor */
+  const cur = document.getElementById('cursor');
+  let cx = -100, cy = -100, px2 = -100, py2 = -100;
+  window.addEventListener('pointermove', e => { cx = e.clientX; cy = e.clientY; cur.style.opacity = '1'; });
+  (function curLoop() {
+    px2 += (cx - px2) * .18; py2 += (cy - py2) * .18;
+    cur.style.transform = 'translate3d(' + px2 + 'px,' + py2 + 'px,0)';
+    requestAnimationFrame(curLoop);
+  })();
+  document.querySelectorAll('[data-cursor]').forEach(el => {
+    el.addEventListener('pointerenter', () => cur.classList.add('act'));
+    el.addEventListener('pointerleave', () => cur.classList.remove('act'));
+  });
+}
+function updateRail() {
+  const btns = document.querySelectorAll('.rail button');
+  let best = 0, bv = -1;
+  for (let s = 0; s < 5; s++) { const v = Math.min(1, progressFor(s) * 1.6); if (v > bv) { bv = v; best = s; } }
+  btns.forEach((b, i) => b.classList.toggle('on', i === best));
+}
+function updateFg() {
+  const fgs = document.querySelectorAll('.fg');
+  fgs.forEach((fg, s) => {
+    const t = progressFor(s + 1);
+    fg.classList.toggle('fg-active', t > .08 && t < .94);
+    fg.classList.toggle('fg-retiring', (t <= .08 || t >= .94) && fg.classList.contains('fg-active') === false);
+  });
+}
+function updateRailChips() {
+  document.querySelectorAll('[data-chip]').forEach((ch, i) => {
+    ch.classList.toggle('on', Math.min(1, progressFor(i + 1) * 1.7) > .62);
+  });
+}
+
+/* ------------------------------------------------------- 11 · world updates */
+function updateWorld(time, dt) {
+  tGlobal = time;
+  if (window.__rings) for (const r of window.__rings) {
+    const ph = r.userData.ph + time * r.userData.tw * .05;
+    const k = ph % 1;
+    const s = .5 + k * 30;
+    r.scale.set(s, s, 1);
+    r.material.opacity = .5 * (1 - k);
+  }
+  if (window.__streaks) for (const m of window.__streaks.children) {
+    const d = m.userData;
+    m.material.opacity = clamp(d.ph + Math.sin(time * d.tw * 2 + d.seed) * .09, .03, .6);
+  }
+  if (window.__haze) for (const s of window.__haze) {
+    s.material.opacity = clamp(s.userData.ph + Math.sin(time * s.userData.tw + s.position.x) * .025, .02, .3);
+  }
+  if (window.__motes) {
+    const m = window.__motes, arr = m.userData.pos, sp = m.userData.sp;
+    for (let i = 0; i < sp.length; i++) {
+      arr[i * 3 + 1] += Math.sin(time * .5 + i) * dt * .05;
+      arr[i * 3] += Math.sin(time * .3 + i * 1.7) * dt * .10;
+    }
+    m.geometry.attributes.position.needsUpdate = true;
+  }
+  if (window.__word) {
+    window.__word.position.y = 24 + Math.sin(time * .18) * .5;
+    window.__word.rotation.y = Math.sin(time * .11) * .035;
+  }
+  if (window.__glows) for (const g0 of window.__glows) {
+    g0.material.opacity = clamp(g0.userData.ph + Math.sin(time * g0.userData.tw + g0.position.x) * .08, .1, .5);
+  }
+}
+
+/* ------------------------------------------------------- 12 · machine */
+function resize() {
+  vw = innerWidth; vh = innerHeight;
+  renderer.setSize(vw, vh);
+  camera.aspect = vw / vh;
+  camera.updateProjectionMatrix();
+  if (POST.resize) POST.resize();
+}
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(.05, (now - lastT) / 1000); lastT = now;
+  updateScroll(dt);
+  applyCamera(eased);
+  updateWorld(performance.now() / 1000, dt);
+  POST.full();
+  renderCards();
+  updateRail();
+  updateFg();
+  updateRailChips();
+}
+let lastT = 0;
+
+/* ------------------------------------------------------- 13 · boot */
+let booted = false, failed = false;
+function fail() {
+  if (failed) return; failed = true;
+  document.body.classList.add('no-webgl');
+  document.getElementById('pre').classList.add('done');
+  document.querySelectorAll('[data-rv]').forEach(el => el.classList.add('rv-in'));
+  document.body.classList.remove('is-locked');
+}
+function start() {
+  if (booted) return; booted = true;
+  document.getElementById('pre').classList.add('done');
+  document.body.classList.remove('is-locked');
+  resize();
+  lastT = performance.now();
+  requestAnimationFrame(frame);
+}
+function boot() {
+  document.body.classList.add('is-locked');
+  try {
+    initPage();
+    initGL();
+    initPost();
+    buildSky();
+    buildRiver();
+    buildBanks();
+    buildPearl();
+    buildTowers();
+    buildBund();
+    buildAtmosphere();
+    buildWordmark();
+    buildLights();
+    initCards();
+    resize();
+    /* shot / view debug helpers */
+    if (Q.has('shot') || Q.has('view')) {
+      const v = Q.get('view');
+      const anchor = v !== null ? ['hero', 'pearl', 'skyline', 'bund', 'afterglow', 'foot'][+v] || 'hero' : null;
+      if (anchor) { const el = document.getElementById(anchor); if (el) window.scrollTo(0, el.offsetTop); }
+      scroll = targetScroll = window.pageYOffset;
+      updateScroll(.016);
+      eased = easeIO(sat(progress * 1.02 - 0.005));
+      applyCamera(eased);
+      updateWorld(0, .016);
+      POST.full();
+      renderCards();
+      document.querySelectorAll('[data-rv]').forEach(el => el.classList.add('rv-in'));
+      document.getElementById('pre').classList.add('done');
+      document.body.classList.remove('is-locked');
+      return;   /* no rAF in shot mode: freeze the frame */
+    }
+    start();
+  } catch (err) {
+    console.error(err);
+    fail();
+  }
+}
+boot();
+})();
+</script>
+</body>
+</html>
